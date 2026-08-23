@@ -7,7 +7,6 @@ import {
   Text,
   Alert,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,33 +15,27 @@ import {
   INITIAL_PLANTS,
   INITIAL_SEEDS,
   TOURIST_SPOTS,
-  INITIAL_COUPONS,
   INITIAL_ENCYCLOPEDIA,
 } from './src/data/mockData';
-import { Plant, Seed, TouristSpot, Coupon, EncyclopediaItem } from './src/types';
+import { Plant, Seed, TouristSpot, EncyclopediaItem } from './src/types';
 import { dbService, CURRENT_USER_ID } from './src/services/dbService';
 
 import { GardenTab } from './src/components/GardenTab';
 import { ExploreTab } from './src/components/ExploreTab';
 import { EncyclopediaTab } from './src/components/EncyclopediaTab';
-import { CouponsTab } from './src/components/CouponsTab';
-
-import { CheckInModal } from './src/components/CheckInModal';
 import { HarvestModal } from './src/components/HarvestModal';
-import { CouponDetailModal } from './src/components/CouponDetailModal';
+import { CheckInModal } from './src/components/CheckInModal';
 
-type TabType = 'garden' | 'explore' | 'encyclopedia' | 'coupons';
+type TabType = 'garden' | 'explore' | 'encyclopedia';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('garden');
   const [loading, setLoading] = useState<boolean>(true);
-  const [isSynced, setIsSynced] = useState<boolean>(false);
 
   // 핵심 애플리케이션 상태 (인터랙티브 순환 구조)
   const [plants, setPlants] = useState<Plant[]>(INITIAL_PLANTS);
   const [seeds, setSeeds] = useState<Seed[]>(INITIAL_SEEDS);
   const [touristSpots, setTouristSpots] = useState<TouristSpot[]>(TOURIST_SPOTS);
-  const [coupons, setCoupons] = useState<Coupon[]>(INITIAL_COUPONS);
   const [encyclopedia, setEncyclopedia] = useState<EncyclopediaItem[]>(INITIAL_ENCYCLOPEDIA);
 
   // 모달 상태
@@ -51,9 +44,6 @@ export default function App() {
 
   const [harvestModalVisible, setHarvestModalVisible] = useState<boolean>(false);
   const [harvestedPlant, setHarvestedPlant] = useState<Plant | null>(null);
-
-  const [couponModalVisible, setCouponModalVisible] = useState<boolean>(false);
-  const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
 
   // 앱 실행 시 Supabase 클라우드 데이터 불러오기
   useEffect(() => {
@@ -64,9 +54,7 @@ export default function App() {
           setPlants(result.data.plants);
           setSeeds(result.data.seeds);
           setTouristSpots(result.data.touristSpots);
-          setCoupons(result.data.coupons);
           setEncyclopedia(result.data.encyclopedia);
-          setIsSynced(true);
         }
       } catch (err) {
         console.warn('DB Load error:', err);
@@ -123,7 +111,7 @@ export default function App() {
     });
   };
 
-  // 3. 수확 핸들러 (수확 -> 리워드 쿠폰 생성 + 도감 카운트 증가)
+  // 3. 수확 핸들러 (수확 -> 도감 기록 및 경험치 상승)
   const handleHarvest = (plant: Plant) => {
     setHarvestedPlant(plant);
     setHarvestModalVisible(true);
@@ -132,22 +120,6 @@ export default function App() {
     const nextPlants = plants.filter((p) => p.id !== plant.id);
     setPlants(nextPlants);
     dbService.syncPlants(CURRENT_USER_ID, nextPlants);
-
-    // 새 리워드 쿠폰 발급 & 동기화
-    const newCoupon: Coupon = {
-      id: `c_${Date.now()}`,
-      title: plant.harvestReward,
-      brand: `${plant.region} 로컬 가든 협동조합`,
-      discount: '무료 배송/교환',
-      sourceCrop: `${plant.name} 수확 완료 보상`,
-      region: plant.region,
-      expiryDate: '2026.12.31까지',
-      used: false,
-      code: `HARVEST-${plant.region.toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
-    };
-    const nextCoupons = [newCoupon, ...coupons];
-    setCoupons(nextCoupons);
-    dbService.syncCoupons(CURRENT_USER_ID, nextCoupons);
 
     // 도감 수확 카운트 증가 & 동기화
     const nextEnc = encyclopedia.map((item) =>
@@ -176,7 +148,7 @@ export default function App() {
       growthStage: 0, // 씨앗 상태
       waterProgress: 20,
       sunProgress: 20,
-      harvestReward: `${seed.region} 특산품 선물세트 배송권`,
+      harvestReward: `${seed.region} 특산 마스터 배지`,
     };
     const nextPlants = [newPlant, ...plants];
     setPlants(nextPlants);
@@ -216,20 +188,6 @@ export default function App() {
     setCheckInModalVisible(true);
   };
 
-  // 6. 쿠폰 사용 핸들러
-  const handleUseCoupon = (coupon: Coupon) => {
-    setSelectedCoupon(coupon);
-    setCouponModalVisible(true);
-  };
-
-  const handleConfirmUseCoupon = (couponId: string) => {
-    setCoupons((prev) =>
-      prev.map((c) => (c.id === couponId ? { ...c, used: true } : c))
-    );
-    dbService.markCouponUsed(couponId);
-    Alert.alert('✅ 사용 완료', '쿠폰 사용 처리가 완료되었습니다.');
-  };
-
   return (
     <View style={styles.rootWrapper}>
       <SafeAreaView style={styles.safeArea}>
@@ -241,161 +199,119 @@ export default function App() {
             <Text style={styles.logoEmoji}>🌱</Text>
             <Text style={styles.logoText}>로컬 가든</Text>
             <View style={styles.betaPill}>
-              <Text style={styles.betaPillText}>☁️ Supabase</Text>
+              <Text style={styles.betaPillText}>TourAPI · 팜 빌리지</Text>
             </View>
           </View>
 
-        <TouchableOpacity
-          style={styles.notificationBtn}
-          onPress={() => Alert.alert('🔔 알림', '오늘 보성 녹차 물주기 타이머가 완료되었습니다!')}
-        >
-          <Ionicons name="notifications-outline" size={20} color="#1E293B" />
-          <View style={styles.notifDot} />
-        </TouchableOpacity>
-      </View>
-
-      {/* 메인 탭 화면 콘텐츠 */}
-      <View style={styles.mainContainer}>
-        {activeTab === 'garden' && (
-          <GardenTab
-            plants={plants}
-            seeds={seeds}
-            onWater={handleWater}
-            onSun={handleSun}
-            onHarvest={handleHarvest}
-            onPlantSeed={handlePlantSeed}
-            onGoExplore={() => setActiveTab('explore')}
-          />
-        )}
-
-        {activeTab === 'explore' && (
-          <ExploreTab
-            touristSpots={touristSpots}
-            onCheckIn={handleCheckIn}
-          />
-        )}
-
-        {activeTab === 'encyclopedia' && (
-          <EncyclopediaTab encyclopedia={encyclopedia} />
-        )}
-
-        {activeTab === 'coupons' && (
-          <CouponsTab
-            coupons={coupons}
-            onUseCoupon={handleUseCoupon}
-          />
-        )}
-      </View>
-
-      {/* 하단 네비게이션 탭 바 */}
-      <View style={styles.bottomTabBar}>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => setActiveTab('garden')}
-        >
-          <Ionicons
-            name={activeTab === 'garden' ? 'leaf' : 'leaf-outline'}
-            size={22}
-            color={activeTab === 'garden' ? '#2D6A4F' : '#94A3B8'}
-          />
-          <Text
-            style={[
-              styles.tabLabel,
-              activeTab === 'garden' && styles.tabLabelActive,
-            ]}
+          <TouchableOpacity
+            style={styles.notificationBtn}
+            onPress={() => Alert.alert('🔔 알림', '오늘 보성 녹차 물주기 타이머가 완료되었습니다!')}
           >
-            내 가든
-          </Text>
-        </TouchableOpacity>
+            <Ionicons name="notifications-outline" size={20} color="#1E293B" />
+            <View style={styles.notifDot} />
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => setActiveTab('explore')}
-        >
-          <Ionicons
-            name={activeTab === 'explore' ? 'compass' : 'compass-outline'}
-            size={22}
-            color={activeTab === 'explore' ? '#2D6A4F' : '#94A3B8'}
-          />
-          <Text
-            style={[
-              styles.tabLabel,
-              activeTab === 'explore' && styles.tabLabelActive,
-            ]}
-          >
-            로컬 탐험
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => setActiveTab('encyclopedia')}
-        >
-          <Ionicons
-            name={activeTab === 'encyclopedia' ? 'book' : 'book-outline'}
-            size={22}
-            color={activeTab === 'encyclopedia' ? '#2D6A4F' : '#94A3B8'}
-          />
-          <Text
-            style={[
-              styles.tabLabel,
-              activeTab === 'encyclopedia' && styles.tabLabelActive,
-            ]}
-          >
-            특산 도감
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => setActiveTab('coupons')}
-        >
-          <View>
-            <Ionicons
-              name={activeTab === 'coupons' ? 'ticket' : 'ticket-outline'}
-              size={22}
-              color={activeTab === 'coupons' ? '#2D6A4F' : '#94A3B8'}
+        {/* 메인 탭 화면 콘텐츠 */}
+        <View style={styles.mainContainer}>
+          {activeTab === 'garden' && (
+            <GardenTab
+              plants={plants}
+              seeds={seeds}
+              onWater={handleWater}
+              onSun={handleSun}
+              onHarvest={handleHarvest}
+              onPlantSeed={handlePlantSeed}
+              onGoExplore={() => setActiveTab('explore')}
             />
-            {coupons.filter((c) => !c.used).length > 0 && (
-              <View style={styles.tabBadge}>
-                <Text style={styles.tabBadgeText}>
-                  {coupons.filter((c) => !c.used).length}
-                </Text>
-              </View>
-            )}
-          </View>
-          <Text
-            style={[
-              styles.tabLabel,
-              activeTab === 'coupons' && styles.tabLabelActive,
-            ]}
+          )}
+
+          {activeTab === 'explore' && (
+            <ExploreTab
+              touristSpots={touristSpots}
+              onCheckIn={handleCheckIn}
+            />
+          )}
+
+          {activeTab === 'encyclopedia' && (
+            <EncyclopediaTab encyclopedia={encyclopedia} />
+          )}
+        </View>
+
+        {/* 하단 네비게이션 탭 바 (깔끔한 3개 탭) */}
+        <View style={styles.bottomTabBar}>
+          <TouchableOpacity
+            style={styles.tabItem}
+            onPress={() => setActiveTab('garden')}
           >
-            쿠폰함
-          </Text>
-        </TouchableOpacity>
-      </View>
+            <Ionicons
+              name={activeTab === 'garden' ? 'leaf' : 'leaf-outline'}
+              size={22}
+              color={activeTab === 'garden' ? '#2D6A4F' : '#94A3B8'}
+            />
+            <Text
+              style={[
+                styles.tabLabel,
+                activeTab === 'garden' && styles.tabLabelActive,
+              ]}
+            >
+              내 가든
+            </Text>
+          </TouchableOpacity>
 
-      {/* 모달 팝업들 */}
-      <CheckInModal
-        visible={checkInModalVisible}
-        spot={selectedSpotForCheckIn}
-        onClose={() => setCheckInModalVisible(false)}
-        onGoToGarden={() => setActiveTab('garden')}
-      />
+          <TouchableOpacity
+            style={styles.tabItem}
+            onPress={() => setActiveTab('explore')}
+          >
+            <Ionicons
+              name={activeTab === 'explore' ? 'compass' : 'compass-outline'}
+              size={22}
+              color={activeTab === 'explore' ? '#2D6A4F' : '#94A3B8'}
+            />
+            <Text
+              style={[
+                styles.tabLabel,
+                activeTab === 'explore' && styles.tabLabelActive,
+              ]}
+            >
+              로컬 탐험
+            </Text>
+          </TouchableOpacity>
 
-      <HarvestModal
-        visible={harvestModalVisible}
-        plant={harvestedPlant}
-        onClose={() => setHarvestModalVisible(false)}
-        onGoToCoupons={() => setActiveTab('coupons')}
-      />
+          <TouchableOpacity
+            style={styles.tabItem}
+            onPress={() => setActiveTab('encyclopedia')}
+          >
+            <Ionicons
+              name={activeTab === 'encyclopedia' ? 'book' : 'book-outline'}
+              size={22}
+              color={activeTab === 'encyclopedia' ? '#2D6A4F' : '#94A3B8'}
+            />
+            <Text
+              style={[
+                styles.tabLabel,
+                activeTab === 'encyclopedia' && styles.tabLabelActive,
+              ]}
+            >
+              특산 도감
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      <CouponDetailModal
-        visible={couponModalVisible}
-        coupon={selectedCoupon}
-        onClose={() => setCouponModalVisible(false)}
-        onConfirmUse={handleConfirmUseCoupon}
-      />
+        {/* 모달 팝업들 */}
+        <CheckInModal
+          visible={checkInModalVisible}
+          spot={selectedSpotForCheckIn}
+          onClose={() => setCheckInModalVisible(false)}
+          onGoToGarden={() => setActiveTab('garden')}
+        />
+
+        <HarvestModal
+          visible={harvestModalVisible}
+          plant={harvestedPlant}
+          onClose={() => setHarvestModalVisible(false)}
+          onGoToEncyclopedia={() => setActiveTab('encyclopedia')}
+        />
       </SafeAreaView>
     </View>
   );
@@ -445,8 +361,8 @@ const styles = StyleSheet.create({
   },
   betaPill: {
     backgroundColor: '#E8F5E9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 6,
     marginLeft: 4,
   },
@@ -500,23 +416,6 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     color: '#2D6A4F',
-    fontWeight: '800',
-  },
-  tabBadge: {
-    position: 'absolute',
-    top: -3,
-    right: -8,
-    backgroundColor: '#EF4444',
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  tabBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
     fontWeight: '800',
   },
 });

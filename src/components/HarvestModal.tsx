@@ -13,14 +13,14 @@ interface HarvestModalProps {
   visible: boolean;
   plant: Plant | null;
   onClose: () => void;
-  onGoToCoupons: () => void;
+  onGoToEncyclopedia: () => void;
 }
 
 export const HarvestModal: React.FC<HarvestModalProps> = ({
   visible,
   plant,
   onClose,
-  onGoToCoupons,
+  onGoToEncyclopedia,
 }) => {
   if (!plant) return null;
 
@@ -40,43 +40,43 @@ export const HarvestModal: React.FC<HarvestModalProps> = ({
           <Text style={styles.celebrateTitle}>🎉 특산 작물 수확 완료!</Text>
           <Text style={styles.plantName}>{plant.name}</Text>
           <Text style={styles.plantDesc}>
-            정성으로 키워낸 {plant.region}의 명품 특산물이 완성되었습니다!
+            정성으로 키워낸 {plant.region}의 명품 특산물이 성공적으로 수확되었습니다!
           </Text>
 
-          {/* 지급 보상 박스 */}
+          {/* 수확 성과 카드 */}
           <View style={styles.rewardCard}>
             <View style={styles.rewardHeader}>
-              <Ionicons name="gift" size={16} color="#059669" />
-              <Text style={styles.rewardHeaderText}>획득한 로컬 리워드</Text>
+              <Ionicons name="ribbon" size={18} color="#059669" />
+              <Text style={styles.rewardHeaderText}>도감 등록 및 수확 업적</Text>
             </View>
-            <Text style={styles.rewardTitle}>{plant.harvestReward}</Text>
+            <Text style={styles.rewardTitle}>🏆 {plant.region} 마스터 배지 획득</Text>
             <Text style={styles.rewardNote}>
-              쿠폰함에 지급되었으며, 실제 특산물 배송 신청 또는 매장에서 사용 가능합니다.
+              [전국 특산물 도감]에 수확 기록이 영구 등록되며, 정원사 경험치(+100 EXP)를 획득했습니다!
             </Text>
           </View>
 
-          {/* 도감 업데이트 알림 */}
-          <View style={styles.encyclopediaNotice}>
-            <Ionicons name="book-outline" size={14} color="#2563EB" />
-            <Text style={styles.encyclopediaNoticeText}>
-              [전국 특산물 도감]에 수확 기록이 등록되었습니다 (+1).
+          {/* 마을 번영도 알림 */}
+          <View style={styles.villageNotice}>
+            <Ionicons name="sparkles" size={16} color="#D97706" />
+            <Text style={styles.villageNoticeText}>
+              우리 팜 빌리지의 번영도 레벨이 상승했습니다! ✨
             </Text>
           </View>
 
           {/* 버튼 */}
           <View style={styles.btnRow}>
             <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-              <Text style={styles.closeBtnText}>가든으로 돌아가기</Text>
+              <Text style={styles.closeBtnText}>계속 가꾸기</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.couponBtn}
+              style={styles.encyclopediaBtn}
               onPress={() => {
                 onClose();
-                onGoToCoupons();
+                onGoToEncyclopedia();
               }}
             >
-              <Text style={styles.couponBtnText}>쿠폰 확인하기</Text>
+              <Text style={styles.encyclopediaBtnText}>도감 보러가기 📖</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -149,11 +149,11 @@ const styles = StyleSheet.create({
   rewardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginBottom: 4,
+    gap: 6,
+    marginBottom: 6,
   },
   rewardHeaderText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#059669',
   },
@@ -168,19 +168,22 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     lineHeight: 16,
   },
-  encyclopediaNotice: {
+  villageNotice: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFFBEB',
     padding: 10,
     borderRadius: 10,
     gap: 6,
     width: '100%',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
     marginBottom: 20,
   },
-  encyclopediaNoticeText: {
+  villageNoticeText: {
     fontSize: 11,
-    color: '#1D4ED8',
+    color: '#92400E',
+    fontWeight: '600',
     flex: 1,
   },
   btnRow: {
@@ -200,14 +203,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#64748B',
   },
-  couponBtn: {
-    flex: 1.2,
-    backgroundColor: '#059669',
+  encyclopediaBtn: {
+    flex: 1.3,
+    backgroundColor: '#2D6A4F',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
   },
-  couponBtnText: {
+  encyclopediaBtnText: {
     fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
