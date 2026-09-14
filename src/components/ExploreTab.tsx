@@ -3,6 +3,8 @@ import {
   StyleSheet,
   Text,
   View,
+  Image,
+  Linking,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -12,55 +14,140 @@ import { TouristSpot } from '../types';
 
 interface ExploreTabProps {
   touristSpots: TouristSpot[];
-  onCheckIn: (spot: TouristSpot) => void;
+  onCheckIn: (spot: TouristSpot) => void | Promise<void>;
+  gpsStatusText: string;
+  isGpsLoading: boolean;
+  onRefreshNearby: () => void;
 }
 
 const REGIONS = ['전체', '제주', '전남', '경북', '강원', '충북'];
+type ExploreMode = NonNullable<TouristSpot['discoveryType']>;
 
 export const ExploreTab: React.FC<ExploreTabProps> = ({
   touristSpots,
   onCheckIn,
+  gpsStatusText,
+  isGpsLoading,
+  onRefreshNearby,
 }) => {
+  const [exploreMode, setExploreMode] = useState<ExploreMode>('popular');
   const [selectedRegion, setSelectedRegion] = useState<string>('전체');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  const openGoogleMapsRoute = (spot: TouristSpot) => {
+    const destination =
+      spot.latitude !== undefined && spot.longitude !== undefined
+        ? `${spot.latitude},${spot.longitude}`
+        : `${spot.title} ${spot.address}`;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=walking`;
+    Linking.openURL(url);
+  };
+
   const filteredSpots = touristSpots.filter((spot) => {
+    const spotMode = spot.discoveryType ?? 'hiddenDiscovery';
+    const matchesMode = spotMode === exploreMode;
     const matchesRegion =
       selectedRegion === '전체' || spot.region === selectedRegion;
     const matchesSearch =
       spot.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       spot.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
       spot.seedName.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesRegion && matchesSearch;
+    return matchesMode && matchesRegion && matchesSearch;
   });
+
+  const modeTitleMap: Record<ExploreMode, string> = {
+    popular: '인기 명소',
+    nearPopular: '인기 명소 옆',
+    hiddenDiscovery: '숨은 관광지 발견',
+  };
+  const modeDescriptionMap: Record<ExploreMode, string> = {
+    popular: 'Gemini가 대표 명소로 분류한 GPS 주변 TourAPI 장소예요',
+    nearPopular: '인기 명소 근처의 사람들이 잘 모를 만한 장소예요',
+    hiddenDiscovery: '인기 동선에서 조금 떨어진 비인기 후보를 발견해보세요',
+  };
 
   return (
     <View style={styles.container}>
-      {/* 검색 & 헤더 */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>로컬 관광지 탐험 🗺️</Text>
-        <Text style={styles.headerSub}>
-          관광지를 방문하고 인증하면 해당 지역 특산 씨앗을 드려요!
-        </Text>
+        <View style={styles.headerBoard}>
+          <Text style={styles.headerKicker}>관광 수요를 주변으로 넓히는 농장 의뢰</Text>
+          <Text style={styles.headerTitle}>숨은 관광지 탐험</Text>
+          <Text style={styles.headerSub}>
+            현재 GPS 주변 TourAPI 관광지만 씨앗 보상으로 연결해요
+          </Text>
+        </View>
 
-        {/* 검색창 */}
+        <View style={styles.modeTabs}>
+          <TouchableOpacity
+            style={[styles.modeTab, exploreMode === 'popular' && styles.modeTabActive]}
+            onPress={() => setExploreMode('popular')}
+          >
+            <Ionicons
+              name="star"
+              size={15}
+              color={exploreMode === 'popular' ? '#FFF8D9' : '#6B4A23'}
+            />
+            <Text style={[styles.modeTabText, exploreMode === 'popular' && styles.modeTabTextActive]}>
+              인기 명소
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeTab, exploreMode === 'nearPopular' && styles.modeTabActive]}
+            onPress={() => setExploreMode('nearPopular')}
+          >
+            <Ionicons
+              name="trail-sign"
+              size={16}
+              color={exploreMode === 'nearPopular' ? '#FFF8D9' : '#6B4A23'}
+            />
+            <Text style={[styles.modeTabText, exploreMode === 'nearPopular' && styles.modeTabTextActive]}>
+              명소 옆
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeTab, exploreMode === 'hiddenDiscovery' && styles.modeTabActive]}
+            onPress={() => setExploreMode('hiddenDiscovery')}
+          >
+            <Ionicons
+              name="sparkles"
+              size={16}
+              color={exploreMode === 'hiddenDiscovery' ? '#FFF8D9' : '#6B4A23'}
+            />
+            <Text style={[styles.modeTabText, exploreMode === 'hiddenDiscovery' && styles.modeTabTextActive]}>
+              숨은 발견
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.searchBar}>
-          <Ionicons name="search" size={18} color="#94A3B8" />
+          <Ionicons name="search" size={18} color="#6B4A23" />
           <TextInput
             style={styles.searchInput}
-            placeholder="관광지, 지역, 특산물 씨앗 검색..."
+            placeholder="관광지, 지역, 씨앗 찾기"
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor="#9C7A44"
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={18} color="#94A3B8" />
+              <Ionicons name="close-circle" size={18} color="#8A5A2B" />
             </TouchableOpacity>
           )}
         </View>
 
-        {/* 지역 필터 칩 */}
+        <View style={styles.gpsPanel}>
+          <View style={styles.gpsTextRow}>
+            <Ionicons name="navigate-circle" size={18} color="#2D6840" />
+            <Text style={styles.gpsStatusText}>
+              {isGpsLoading ? 'GPS로 주변 관광지를 찾는 중...' : gpsStatusText}
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.refreshBtn} onPress={onRefreshNearby}>
+            <Ionicons name="refresh" size={15} color="#FFF8D9" />
+            <Text style={styles.refreshBtnText}>새로고침</Text>
+          </TouchableOpacity>
+        </View>
+
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -91,72 +178,124 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
         </ScrollView>
       </View>
 
-      {/* 관광지 리스트 */}
       <ScrollView
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.listHeader}>
-          <Text style={styles.listCount}>
-            추천 관광지 <Text style={styles.bold}>{filteredSpots.length}</Text>개
-          </Text>
+          <View>
+            <Text style={styles.listCount}>{modeTitleMap[exploreMode]}</Text>
+            <Text style={styles.listCountStrong}>{filteredSpots.length}곳 발견</Text>
+            <Text style={styles.listDescription}>{modeDescriptionMap[exploreMode]}</Text>
+          </View>
           <View style={styles.apiBadge}>
-            <Text style={styles.apiBadgeText}>🇰🇷 한국관광공사 TourAPI</Text>
+            <Text style={styles.apiBadgeText}>TourAPI + Gemini</Text>
           </View>
         </View>
 
         {filteredSpots.map((spot) => (
           <View key={spot.id} style={styles.spotCard}>
-            <View style={styles.spotTop}>
-              <View style={styles.badgeRow}>
-                <View style={styles.categoryBadge}>
-                  <Text style={styles.categoryText}>{spot.category}</Text>
-                </View>
-                <View style={styles.distanceBadge}>
-                  <Ionicons name="location-outline" size={12} color="#64748B" />
-                  <Text style={styles.distanceText}>{spot.distance}</Text>
-                </View>
-              </View>
-              {spot.visited && (
-                <View style={styles.visitedBadge}>
-                  <Ionicons name="checkmark-circle" size={14} color="#059669" />
-                  <Text style={styles.visitedText}>방문 완료</Text>
+            <View style={styles.cardPin} />
+            <View style={styles.spotMainRow}>
+              {spot.imageUrl ? (
+                <Image
+                  source={{ uri: spot.imageUrl }}
+                  style={styles.spotImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.spotImageFallback}>
+                  <Text style={styles.spotImageEmoji}>{spot.seedEmoji}</Text>
+                  <Text style={styles.spotImageFallbackText}>탐험지</Text>
                 </View>
               )}
+
+              <View style={styles.spotInfo}>
+                <View style={styles.spotTop}>
+                  <View style={styles.badgeRow}>
+                    {spot.discoveryType === 'nearPopular' && spot.anchorName && (
+                      <View style={styles.anchorBadge}>
+                        <Ionicons name="flag" size={11} color="#FFF8D9" />
+                        <Text style={styles.anchorText}>{spot.anchorName} 옆</Text>
+                      </View>
+                    )}
+                    <View style={styles.categoryBadge}>
+                      <Text style={styles.categoryText}>{spot.category}</Text>
+                    </View>
+                    <View style={styles.distanceBadge}>
+                      <Ionicons name="location-outline" size={12} color="#64748B" />
+                      <Text style={styles.distanceText}>{spot.distance}</Text>
+                    </View>
+                  </View>
+                  {spot.visited && (
+                    <View style={styles.visitedBadge}>
+                      <Ionicons name="checkmark-circle" size={14} color="#059669" />
+                      <Text style={styles.visitedText}>방문 완료</Text>
+                    </View>
+                  )}
+                </View>
+
+                <Text style={styles.spotTitle}>{spot.title}</Text>
+                <Text style={styles.spotAddress}>{spot.address}</Text>
+                <Text style={styles.spotDesc}>{spot.description}</Text>
+              </View>
             </View>
 
-            <Text style={styles.spotTitle}>{spot.title}</Text>
-            <Text style={styles.spotAddress}>{spot.address}</Text>
-            <Text style={styles.spotDesc}>{spot.description}</Text>
-
-            {/* 씨앗 리워드 박스 */}
             <View style={styles.rewardBox}>
               <View style={styles.rewardLeft}>
-                <Text style={styles.rewardEmoji}>{spot.seedEmoji}</Text>
-                <View>
-                  <Text style={styles.rewardLabel}>방문 인증 시 획득 씨앗</Text>
+                <View style={styles.rewardSeedBubble}>
+                  <Text style={styles.rewardEmoji}>{spot.seedEmoji}</Text>
+                </View>
+                <View style={styles.rewardTextBlock}>
+                  <Text style={styles.rewardLabel}>의뢰 보상</Text>
                   <Text style={styles.rewardSeedName}>{spot.seedName}</Text>
                 </View>
               </View>
-              <TouchableOpacity
-                style={[
-                  styles.checkInBtn,
-                  spot.visited && styles.checkInBtnVisited,
-                ]}
-                onPress={() => onCheckIn(spot)}
-              >
-                <Ionicons
-                  name={spot.visited ? 'refresh' : 'location'}
-                  size={16}
-                  color="#FFFFFF"
-                />
-                <Text style={styles.checkInBtnText}>
-                  {spot.visited ? '재인증(+부스터)' : '위치 인증(체크인)'}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={styles.routeBtn}
+                  onPress={() => openGoogleMapsRoute(spot)}
+                >
+                  <Ionicons name="map" size={16} color="#3A2A18" />
+                  <Text style={styles.routeBtnText}>길찾기</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.checkInBtn,
+                    spot.visited && styles.checkInBtnVisited,
+                  ]}
+                  onPress={() => onCheckIn(spot)}
+                >
+                  <Ionicons
+                    name={spot.visited ? 'refresh' : 'location'}
+                    size={16}
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.checkInBtnText}>
+                    {spot.visited ? '재인증' : '위치 인증'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         ))}
+
+        {filteredSpots.length === 0 && (
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="navigate" size={24} color="#FFF8D9" />
+            </View>
+            <Text style={styles.emptyTitle}>GPS 기반 관광지가 아직 없어요</Text>
+            <Text style={styles.emptyText}>
+              위치 권한을 허용하고 새로고침을 눌러주세요. 기본으로 세팅된 장소는 표시하지 않고,
+              현재 위치 주변 TourAPI 결과를 Gemini가 분류한 장소만 보여줍니다.
+            </Text>
+            <TouchableOpacity style={styles.emptyButton} onPress={onRefreshNearby}>
+              <Ionicons name="refresh" size={15} color="#FFF8D9" />
+              <Text style={styles.emptyButtonText}>GPS로 다시 찾기</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -165,61 +304,161 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#78B96A',
   },
   header: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#78B96A',
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 18,
     paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+  },
+  headerBoard: {
+    backgroundColor: '#2D6840',
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    marginBottom: 12,
+    borderWidth: 3,
+    borderColor: '#1F4E31',
+    shadowColor: '#2E2718',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 0,
+    elevation: 4,
+  },
+  headerKicker: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#F7D878',
+    marginBottom: 4,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '800',
-    color: '#1E293B',
+    color: '#FFF8D9',
   },
   headerSub: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-    marginBottom: 12,
+    fontSize: 13,
+    color: '#DCEEC5',
+    marginTop: 4,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
+    backgroundColor: '#FFF8D9',
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 9,
     marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#D5B66E',
   },
   searchInput: {
     flex: 1,
     fontSize: 13,
-    color: '#1E293B',
+    color: '#3D321F',
     marginLeft: 8,
+    fontWeight: '700',
+  },
+  modeTabs: {
+    flexDirection: 'row',
+    backgroundColor: '#E6F5C9',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#5E8E42',
+    gap: 4,
+  },
+  modeTab: {
+    flex: 1,
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF8D9',
+    borderRadius: 7,
+    gap: 5,
+    borderWidth: 2,
+    borderColor: '#D5B66E',
+    paddingHorizontal: 6,
+  },
+  modeTabActive: {
+    backgroundColor: '#8A5A2B',
+    borderColor: '#6B3F1D',
+  },
+  modeTabText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#6B4A23',
+    textAlign: 'center',
+  },
+  modeTabTextActive: {
+    color: '#FFF8D9',
   },
   regionFilterRow: {
     gap: 8,
   },
+  gpsPanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#E6F5C9',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#5E8E42',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    gap: 10,
+  },
+  gpsTextRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  gpsStatusText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#24492E',
+  },
+  refreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2D6840',
+    borderRadius: 7,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    gap: 4,
+    borderWidth: 2,
+    borderColor: '#1F4E31',
+  },
+  refreshBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#FFF8D9',
+  },
   regionChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    backgroundColor: '#FFF8D9',
+    borderWidth: 2,
+    borderColor: '#D5B66E',
   },
   regionChipSelected: {
-    backgroundColor: '#2D6A4F',
+    backgroundColor: '#8A5A2B',
+    borderColor: '#6B3F1D',
   },
   regionChipText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
+    fontWeight: '800',
+    color: '#6B4A23',
   },
   regionChipTextSelected: {
-    color: '#FFFFFF',
+    color: '#FFF8D9',
     fontWeight: '700',
   },
   listContent: {
@@ -232,60 +471,139 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+    backgroundColor: 'rgba(255, 248, 217, 0.62)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(107, 74, 35, 0.2)',
   },
   listCount: {
-    fontSize: 13,
-    color: '#64748B',
+    fontSize: 11,
+    color: '#466233',
+    fontWeight: '800',
   },
-  bold: {
+  listCountStrong: {
+    fontSize: 15,
+    color: '#24492E',
+    fontWeight: '900',
+  },
+  listDescription: {
+    fontSize: 11,
+    color: '#466233',
     fontWeight: '700',
-    color: '#1E293B',
+    marginTop: 2,
   },
   apiBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    backgroundColor: '#F7D878',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#C99542',
   },
   apiBadgeText: {
     fontSize: 11,
-    color: '#2563EB',
-    fontWeight: '600',
+    color: '#5C3B16',
+    fontWeight: '900',
   },
   spotCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    backgroundColor: '#FFF8D9',
+    borderRadius: 8,
     padding: 16,
     marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    shadowColor: '#2E2718',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 0,
+    elevation: 3,
+    borderWidth: 3,
+    borderColor: '#B98043',
+    position: 'relative',
+  },
+  cardPin: {
+    position: 'absolute',
+    top: -7,
+    left: 18,
+    width: 20,
+    height: 14,
+    borderRadius: 4,
+    backgroundColor: '#D95845',
+    borderWidth: 2,
+    borderColor: '#8F3A25',
   },
   spotTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 8,
+  },
+  spotMainRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  spotInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  spotImage: {
+    width: 178,
+    height: 178,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#D5B66E',
+    backgroundColor: '#E6F5C9',
+  },
+  spotImageFallback: {
+    width: 178,
+    height: 178,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#D5B66E',
+    backgroundColor: '#E6F5C9',
+  },
+  spotImageEmoji: {
+    fontSize: 38,
+    marginBottom: 6,
+  },
+  spotImageFallbackText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#466233',
   },
   badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6,
   },
+  anchorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#2D6840',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  anchorText: {
+    fontSize: 11,
+    color: '#FFF8D9',
+    fontWeight: '900',
+  },
   categoryBadge: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#E9D090',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
   categoryText: {
     fontSize: 11,
-    color: '#475569',
-    fontWeight: '600',
+    color: '#5C3B16',
+    fontWeight: '800',
   },
   distanceBadge: {
     flexDirection: 'row',
@@ -294,82 +612,181 @@ const styles = StyleSheet.create({
   },
   distanceText: {
     fontSize: 11,
-    color: '#64748B',
+    color: '#6B4A23',
+    fontWeight: '700',
   },
   visitedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#E6F5C9',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
   visitedText: {
     fontSize: 11,
-    color: '#059669',
+    color: '#2D6840',
     fontWeight: '700',
   },
   spotTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1E293B',
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#3A2A18',
     marginBottom: 3,
   },
   spotAddress: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: '#8A6A39',
     marginBottom: 8,
+    fontWeight: '700',
   },
   spotDesc: {
     fontSize: 13,
-    color: '#475569',
+    color: '#5C4B2E',
     lineHeight: 18,
     marginBottom: 12,
+    fontWeight: '600',
   },
   rewardBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    backgroundColor: '#F2E0A8',
+    borderRadius: 8,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: '#D5B66E',
+    marginTop: 12,
   },
   rewardLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
     flex: 1,
   },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 10,
+  },
+  routeBtn: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFEFAE',
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 4,
+    borderWidth: 2,
+    borderColor: '#C99542',
+  },
+  routeBtnText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#3A2A18',
+  },
+  rewardSeedBubble: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFEFAE',
+    borderWidth: 2,
+    borderColor: '#C99542',
+  },
   rewardEmoji: {
-    fontSize: 22,
+    fontSize: 30,
+  },
+  rewardTextBlock: {
+    flex: 1,
+    minWidth: 0,
   },
   rewardLabel: {
-    fontSize: 10,
-    color: '#64748B',
+    fontSize: 12,
+    color: '#7B5B2A',
+    fontWeight: '900',
+    marginBottom: 3,
   },
   rewardSeedName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1E293B',
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#3A2A18',
   },
   checkInBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2D6A4F',
+    backgroundColor: '#2D6840',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: 8,
     gap: 4,
+    borderWidth: 2,
+    borderColor: '#1F4E31',
   },
   checkInBtnVisited: {
-    backgroundColor: '#0284C7',
+    backgroundColor: '#8A5A2B',
+    borderColor: '#6B3F1D',
   },
   checkInBtnText: {
     fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  emptyCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFF8D9',
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 24,
+    borderWidth: 3,
+    borderColor: '#B98043',
+    shadowColor: '#2E2718',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.14,
+    shadowRadius: 0,
+    elevation: 3,
+  },
+  emptyIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2D6840',
+    borderWidth: 2,
+    borderColor: '#1F4E31',
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#3A2A18',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#5C4B2E',
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  emptyButton: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2D6840',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    gap: 5,
+    borderWidth: 2,
+    borderColor: '#1F4E31',
+  },
+  emptyButtonText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FFF8D9',
   },
 });

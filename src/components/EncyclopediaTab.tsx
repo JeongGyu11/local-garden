@@ -25,19 +25,21 @@ export const EncyclopediaTab: React.FC<EncyclopediaTabProps> = ({
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* 도감 헤더 */}
       <View style={styles.header}>
-        <Text style={styles.title}>전국 특산물 도감 📖</Text>
+        <View style={styles.bookBadge}>
+          <Ionicons name="book" size={18} color="#FFF8D9" />
+          <Text style={styles.bookBadgeText}>농부의 기록장</Text>
+        </View>
+        <Text style={styles.title}>특산 작물 도감</Text>
         <Text style={styles.subTitle}>
-          여행지를 방문해 전국 8도의 모든 특산물을 수집해 보세요!
+          여행에서 얻은 씨앗과 수확한 작물의 이야기를 모아요
         </Text>
       </View>
 
-      {/* 수집 진행률 카드 */}
       <View style={styles.progressCard}>
         <View style={styles.progressTop}>
           <View>
-            <Text style={styles.progressLabel}>전국 특산물 수집률</Text>
+            <Text style={styles.progressLabel}>도감 완성도</Text>
             <Text style={styles.progressFraction}>
               {discoveredCount} / {totalCount}개 발견
             </Text>
@@ -51,9 +53,9 @@ export const EncyclopediaTab: React.FC<EncyclopediaTabProps> = ({
         </View>
       </View>
 
-      {/* 도감 목록 */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>특산 작물 도감 카드</Text>
+        <View style={styles.sectionLeaf} />
+        <Text style={styles.sectionTitle}>수집 카드</Text>
       </View>
 
       {encyclopedia.map((item) => {
@@ -66,6 +68,9 @@ export const EncyclopediaTab: React.FC<EncyclopediaTabProps> = ({
             ]}
           >
             <View style={styles.cardHeader}>
+              <View style={styles.cardRibbon}>
+                <Text style={styles.cardRibbonText}>{item.region}</Text>
+              </View>
               <View
                 style={[
                   styles.emojiContainer,
@@ -86,13 +91,10 @@ export const EncyclopediaTab: React.FC<EncyclopediaTabProps> = ({
                   >
                     {item.isDiscovered ? item.cropName : '미발견 특산물'}
                   </Text>
-                  <View style={styles.regionTag}>
-                    <Text style={styles.regionTagText}>{item.region}</Text>
-                  </View>
                 </View>
                 <Text style={styles.harvestStat}>
                   {item.isDiscovered
-                    ? `🏆 총 ${item.harvestCount}회 수확 완료`
+                    ? `총 ${item.harvestCount}회 수확 완료`
                     : '관광지 방문 시 잠금 해제'}
                 </Text>
               </View>
@@ -102,13 +104,13 @@ export const EncyclopediaTab: React.FC<EncyclopediaTabProps> = ({
               <View style={styles.storyBox}>
                 <Text style={styles.storyText}>{item.story}</Text>
                 <View style={styles.pointRow}>
-                  <Ionicons name="sparkles" size={13} color="#059669" />
+                  <Ionicons name="sparkles" size={13} color="#C99542" />
                   <Text style={styles.pointText}>{item.specialtyPoint}</Text>
                 </View>
               </View>
             ) : (
               <View style={styles.lockedHintBox}>
-                <Ionicons name="information-circle-outline" size={14} color="#94A3B8" />
+                <Ionicons name="lock-closed" size={14} color="#8A6A39" />
                 <Text style={styles.lockedHintText}>
                   {item.region} 지역 관광지를 방문하여 인증하면 도감이 완성됩니다.
                 </Text>
@@ -124,7 +126,7 @@ export const EncyclopediaTab: React.FC<EncyclopediaTabProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#78B96A',
   },
   content: {
     paddingHorizontal: 20,
@@ -132,30 +134,60 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   header: {
+    backgroundColor: '#2D6840',
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
     marginBottom: 16,
+    borderWidth: 3,
+    borderColor: '#1F4E31',
+    shadowColor: '#2E2718',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 0,
+    elevation: 4,
+  },
+  bookBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#8A5A2B',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 9,
+    borderWidth: 2,
+    borderColor: '#6B3F1D',
+  },
+  bookBadgeText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FFF8D9',
   },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '800',
-    color: '#1E293B',
+    color: '#FFF8D9',
   },
   subTitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+    fontSize: 13,
+    color: '#DCEEC5',
+    marginTop: 4,
+    fontWeight: '700',
   },
   progressCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    backgroundColor: '#FFF8D9',
+    borderRadius: 8,
     padding: 18,
     marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: 3,
+    borderColor: '#B98043',
+    shadowColor: '#2E2718',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 0,
+    elevation: 3,
   },
   progressTop: {
     flexDirection: 'row',
@@ -165,71 +197,108 @@ const styles = StyleSheet.create({
   },
   progressLabel: {
     fontSize: 13,
-    color: '#64748B',
-    fontWeight: '500',
+    color: '#7B5B2A',
+    fontWeight: '900',
   },
   progressFraction: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
+    fontWeight: '900',
+    color: '#3A2A18',
     marginTop: 2,
   },
   progressPercent: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#2D6A4F',
+    color: '#2D6840',
   },
   progressBarBg: {
-    height: 10,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 5,
+    height: 14,
+    backgroundColor: '#6B4A23',
+    borderRadius: 7,
     overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#5C3B16',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#2D6A4F',
+    backgroundColor: '#F7D878',
     borderRadius: 5,
   },
   sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 12,
+  },
+  sectionLeaf: {
+    width: 14,
+    height: 14,
+    borderRadius: 10,
+    backgroundColor: '#2D6840',
+    transform: [{ rotate: '-30deg' }],
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#334155',
+    fontWeight: '900',
+    color: '#24492E',
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    backgroundColor: '#FFF8D9',
+    borderRadius: 8,
     padding: 16,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 3,
+    borderColor: '#B98043',
+    shadowColor: '#2E2718',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 0,
+    elevation: 2,
   },
   cardLocked: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
-    opacity: 0.85,
+    backgroundColor: '#E7D7A4',
+    borderColor: '#A8874D',
+    opacity: 0.9,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
+    position: 'relative',
+  },
+  cardRibbon: {
+    position: 'absolute',
+    right: 0,
+    top: -5,
+    backgroundColor: '#2D6840',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 2,
+    borderColor: '#1F4E31',
+  },
+  cardRibbonText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#FFF8D9',
   },
   emojiContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: '#F0FDF4',
+    width: 58,
+    height: 58,
+    borderRadius: 8,
+    backgroundColor: '#F2E0A8',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    borderWidth: 3,
+    borderColor: '#D5B66E',
   },
   emojiContainerLocked: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#C5B58A',
+    borderColor: '#9C7A44',
   },
   cropEmoji: {
-    fontSize: 24,
+    fontSize: 30,
   },
   infoCol: {
     flex: 1,
@@ -241,41 +310,31 @@ const styles = StyleSheet.create({
   },
   cropName: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
+    fontWeight: '900',
+    color: '#3A2A18',
   },
   cropNameLocked: {
-    color: '#94A3B8',
-  },
-  regionTag: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  regionTagText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
+    color: '#6B6250',
   },
   harvestStat: {
     fontSize: 11,
-    color: '#059669',
+    color: '#2D6840',
     marginTop: 2,
-    fontWeight: '500',
+    fontWeight: '800',
   },
   storyBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
+    backgroundColor: '#F2E0A8',
+    borderRadius: 8,
     padding: 12,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
+    borderWidth: 2,
+    borderColor: '#D5B66E',
   },
   storyText: {
     fontSize: 12,
-    color: '#475569',
+    color: '#5C4B2E',
     lineHeight: 18,
     marginBottom: 6,
+    fontWeight: '600',
   },
   pointRow: {
     flexDirection: 'row',
@@ -284,20 +343,23 @@ const styles = StyleSheet.create({
   },
   pointText: {
     fontSize: 11,
-    color: '#059669',
-    fontWeight: '600',
+    color: '#6B4A23',
+    fontWeight: '900',
   },
   lockedHintBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
+    backgroundColor: '#D4C48F',
+    borderRadius: 8,
     padding: 10,
     gap: 6,
+    borderWidth: 2,
+    borderColor: '#B1965C',
   },
   lockedHintText: {
     fontSize: 11,
-    color: '#64748B',
+    color: '#66583A',
     flex: 1,
+    fontWeight: '700',
   },
 });

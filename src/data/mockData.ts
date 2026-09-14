@@ -1,29 +1,6 @@
 import { TouristSpot, Seed, Plant, Coupon, EncyclopediaItem } from '../types';
 
-export const INITIAL_PLANTS: Plant[] = [
-  {
-    id: 'p1',
-    name: '제주 감귤나무',
-    species: '서귀포 감귤',
-    region: '제주',
-    emoji: '🍊',
-    growthStage: 3, // 3: 열매맺음 (곧 수확 가능)
-    waterProgress: 80,
-    sunProgress: 75,
-    harvestReward: '서귀포 감귤 3kg 산지직송 쿠폰',
-  },
-  {
-    id: 'p2',
-    name: '보성 다원 녹차',
-    species: '보성 어린잎 녹차',
-    region: '전남',
-    emoji: '🍵',
-    growthStage: 1, // 1: 새싹
-    waterProgress: 40,
-    sunProgress: 30,
-    harvestReward: '보성 녹차밭 제휴 티하우스 음료권',
-  },
-];
+export const INITIAL_PLANTS: Plant[] = [];
 
 export const INITIAL_SEEDS: Seed[] = [
   {

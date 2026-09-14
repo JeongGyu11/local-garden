@@ -7,17 +7,22 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Plant, Seed } from '../types';
+import { HarvestedCrop, Plant, Seed } from '../types';
 import { AnimalCrossingGarden } from './AnimalCrossingGarden';
 
 interface GardenTabProps {
   plants: Plant[];
   seeds: Seed[];
+  harvestedCrops: HarvestedCrop[];
+  farmerName: string;
+  money: number;
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
   onPlantSeed: (seed: Seed, plotIndex?: number) => void;
   onGoExplore: () => void;
+  onGoEncyclopedia: () => void;
+  onSellHarvestedCrop: (crop: HarvestedCrop) => void;
 }
 
 const STAGE_NAMES = ['🌱 씨앗', '🌿 새싹', '🌸 꽃봉오리', '🍊 열매 맺음', '✨ 수확 가능!'];
@@ -25,21 +30,20 @@ const STAGE_NAMES = ['🌱 씨앗', '🌿 새싹', '🌸 꽃봉오리', '🍊 �
 export const GardenTab: React.FC<GardenTabProps> = ({
   plants,
   seeds,
+  harvestedCrops,
+  farmerName,
+  money,
   onWater,
   onSun,
   onHarvest,
   onPlantSeed,
   onGoExplore,
+  onGoEncyclopedia,
+  onSellHarvestedCrop,
 }) => {
   const [viewMode, setViewMode] = useState<'game' | 'list'>('game');
 
-  return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* 상단 뷰 모드 스위처 (동물의 숲 게임 모드 vs 리스트 모드) */}
+  const modeSwitch = (
       <View style={styles.viewModeRow}>
         <TouchableOpacity
           style={[styles.viewModeBtn, viewMode === 'game' && styles.viewModeBtnActive]}
@@ -79,20 +83,36 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           </Text>
         </TouchableOpacity>
       </View>
+  );
 
-      {/* 1. 동물의 숲 인터랙티브 게임 모드 */}
-      {viewMode === 'game' ? (
+  if (viewMode === 'game') {
+    return (
+      <View style={styles.gameScreen}>
         <AnimalCrossingGarden
           plants={plants}
           seeds={seeds}
+          harvestedCrops={harvestedCrops}
+          farmerName={farmerName}
+          money={money}
           onWater={onWater}
           onSun={onSun}
           onHarvest={onHarvest}
           onPlantSeed={onPlantSeed}
           onGoExplore={onGoExplore}
+          onGoEncyclopedia={onGoEncyclopedia}
+          onSellHarvestedCrop={onSellHarvestedCrop}
         />
-      ) : (
-        /* 2. 대시보드 리스트 모드 */
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
+      {modeSwitch}
         <View style={styles.listViewContainer}>
           {/* 가든 빌리지 헤더 */}
           <View style={styles.header}>
@@ -277,12 +297,15 @@ export const GardenTab: React.FC<GardenTabProps> = ({
             ))
           )}
         </View>
-      )}
     </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
+  gameScreen: {
+    flex: 1,
+    backgroundColor: '#162A21',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
@@ -292,20 +315,23 @@ const styles = StyleSheet.create({
   },
   viewModeRow: {
     flexDirection: 'row',
-    backgroundColor: '#E2E8F0',
-    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.82)',
+    borderRadius: 8,
     marginHorizontal: 16,
     marginTop: 12,
     marginBottom: 4,
     padding: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(27,67,50,0.1)',
   },
   viewModeBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 10,
+    minHeight: 34,
+    paddingVertical: 7,
+    borderRadius: 6,
     gap: 6,
   },
   viewModeBtnActive: {

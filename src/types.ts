@@ -18,6 +18,14 @@ export interface Seed {
   description: string;
 }
 
+export interface HarvestedCrop {
+  id: string;
+  name: string;
+  region: string;
+  emoji: string;
+  harvestedAt: string;
+}
+
 export interface TouristSpot {
   id: string;
   title: string;
@@ -29,6 +37,11 @@ export interface TouristSpot {
   description: string;
   visited: boolean;
   distance: string;
+  latitude?: number;
+  longitude?: number;
+  imageUrl?: string;
+  discoveryType?: 'popular' | 'nearPopular' | 'hiddenDiscovery';
+  anchorName?: string;
 }
 
 export interface Coupon {
