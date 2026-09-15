@@ -387,53 +387,6 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, []);
 
-  const interaction = useMemo(() => {
-    if (movingTarget) {
-      return {
-        title: movingTarget.type === 'shop' ? '상점 이동 중' : '밭 이동 중',
-        subtitle: '누른 채 원하는 위치로 끌고 가서 손을 떼세요',
-        icon: 'move' as const,
-      };
-    }
-
-    if (nearbyPlot) {
-      if (!currentPlantInPlot) {
-        return {
-          title: plotLabels[nearbyPlot.id] ?? nearbyPlot.label,
-          subtitle: seeds.length > 0 ? `${seeds[0].name} 심기 가능` : '로컬 탐험에서 씨앗을 얻어오세요',
-          icon: 'leaf' as const,
-        };
-      }
-
-      if (currentPlantInPlot.growthStage >= 4) {
-        return {
-          title: `${currentPlantInPlot.name} 수확 가능`,
-          subtitle: currentPlantInPlot.harvestReward,
-          icon: 'sparkles' as const,
-        };
-      }
-
-      return {
-        title: currentPlantInPlot.name,
-        subtitle: `수분 ${currentPlantInPlot.waterProgress}% · 햇빛 ${currentPlantInPlot.sunProgress}%`,
-        icon: 'water' as const,
-      };
-    }
-
-    if (isNearShop) {
-      return {
-        title: '상점',
-        subtitle: '수확한 작물을 판매해 돈을 벌 수 있어요',
-        icon: 'storefront' as const,
-      };
-    }
-
-    return {
-      title: farmName,
-      subtitle: '화면 이동키로 움직이세요',
-      icon: 'walk' as const,
-    };
-  }, [currentPlantInPlot, farmName, isNearShop, movingTarget, nearbyPlot, plotLabels, seeds]);
 
   const triggerEffect = (text: string, x = charPos.x, y = charPos.y) => {
     setFloatingEffect({ text, x, y });
@@ -587,30 +540,6 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
         style={[styles.mapCanvas, { minHeight: mapMinHeight }]}
         onLayout={handleMapLayout}
       >
-        <Pressable
-          style={[
-            styles.seedShop,
-            { left: `${shopPosition.x}%`, top: `${shopPosition.y}%` },
-            movingTarget?.type === 'shop' && styles.movingTarget,
-          ]}
-          onLongPress={(event) =>
-            startDraggingTarget(event, { type: 'shop' }, shopPosition, '상점')
-          }
-          onPressOut={finishDraggingTarget}
-          onPress={(event) =>
-            handleControlPress(event, () => {
-              if (!movingTarget) {
-                setShopVisible(true);
-              }
-            })
-          }
-        >
-          <Text style={styles.objectEmoji}>{SHOP.emoji}</Text>
-          <View style={styles.nameTag}>
-            <Text style={styles.nameTagText}>{SHOP.label}</Text>
-          </View>
-        </Pressable>
-
         {placedPlots.map((plot, index) => {
           const crop = plants[index];
           const isTargeted = nearbyPlotIndex === index;
@@ -702,24 +631,23 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
         )}
 
         <View style={styles.topHud} pointerEvents="box-none">
-          <View style={styles.locationPill}>
-            <Ionicons name="leaf" size={15} color="#F3F7D5" />
-            <Text style={styles.locationText}>{farmName}</Text>
+          <View style={styles.topLeftCluster}>
+            <View style={styles.locationPill}>
+              <Ionicons name="leaf" size={15} color="#F3F7D5" />
+              <Text style={styles.locationText}>{farmName}</Text>
+            </View>
+            <Pressable
+              style={styles.headerShopButton}
+              onPress={(event) => handleControlPress(event, () => setShopVisible(true))}
+            >
+              <Ionicons name="storefront" size={15} color="#F3F7D5" />
+              <Text style={styles.headerShopButtonText}>상점</Text>
+            </Pressable>
           </View>
           <View style={styles.statCluster}>
             <Text style={styles.statText}>{money}G</Text>
             <Text style={styles.statText}>씨앗 {seeds.length}</Text>
             <Text style={styles.statText}>작물 {plants.length}</Text>
-          </View>
-        </View>
-
-        <View style={styles.questPanel} pointerEvents="none">
-          <Ionicons name={interaction.icon} size={17} color="#42592A" />
-          <View style={styles.questCopy}>
-            <Text style={styles.questTitle}>{interaction.title}</Text>
-            <Text style={styles.questSub} numberOfLines={1}>
-              {interaction.subtitle}
-            </Text>
           </View>
         </View>
 
@@ -1491,6 +1419,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  topLeftCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   locationPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1503,6 +1436,27 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,247,214,0.18)',
   },
   locationText: {
+    color: '#FFF7D6',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  headerShopButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#24492E',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 5,
+    gap: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(255,247,214,0.18)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  headerShopButtonText: {
     color: '#FFF7D6',
     fontSize: 13,
     fontWeight: '900',
