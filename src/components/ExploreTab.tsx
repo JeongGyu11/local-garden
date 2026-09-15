@@ -20,7 +20,6 @@ interface ExploreTabProps {
   onRefreshNearby: () => void;
 }
 
-const REGIONS = ['전체', '제주', '전남', '경북', '강원', '충북'];
 type ExploreMode = NonNullable<TouristSpot['discoveryType']>;
 
 export const ExploreTab: React.FC<ExploreTabProps> = ({
@@ -31,7 +30,6 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   onRefreshNearby,
 }) => {
   const [exploreMode, setExploreMode] = useState<ExploreMode>('popular');
-  const [selectedRegion, setSelectedRegion] = useState<string>('전체');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const openGoogleMapsRoute = (spot: TouristSpot) => {
@@ -46,13 +44,11 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   const filteredSpots = touristSpots.filter((spot) => {
     const spotMode = spot.discoveryType ?? 'hiddenDiscovery';
     const matchesMode = spotMode === exploreMode;
-    const matchesRegion =
-      selectedRegion === '전체' || spot.region === selectedRegion;
     const matchesSearch =
       spot.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       spot.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
       spot.seedName.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesMode && matchesRegion && matchesSearch;
+    return matchesMode && matchesSearch;
   });
 
   const modeTitleMap: Record<ExploreMode, string> = {
@@ -61,7 +57,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
     hiddenDiscovery: '숨은 관광지 발견',
   };
   const modeDescriptionMap: Record<ExploreMode, string> = {
-    popular: 'Gemini가 대표 명소로 분류한 GPS 주변 TourAPI 장소예요',
+    popular: '사람들이 많이 모이는 인기 명소에요',
     nearPopular: '인기 명소 근처의 사람들이 잘 모를 만한 장소예요',
     hiddenDiscovery: '인기 동선에서 조금 떨어진 비인기 후보를 발견해보세요',
   };
@@ -73,7 +69,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
           <Text style={styles.headerKicker}>관광 수요를 주변으로 넓히는 농장 의뢰</Text>
           <Text style={styles.headerTitle}>숨은 관광지 탐험</Text>
           <Text style={styles.headerSub}>
-            현재 GPS 주변 TourAPI 관광지만 씨앗 보상으로 연결해요
+            현재 GPS주변 한국관광공사에서 제공되는 관광지만 씨앗 보상으로 연결해요
           </Text>
         </View>
 
@@ -148,34 +144,6 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.regionFilterRow}
-        >
-          {REGIONS.map((region) => {
-            const isSelected = selectedRegion === region;
-            return (
-              <TouchableOpacity
-                key={region}
-                style={[
-                  styles.regionChip,
-                  isSelected && styles.regionChipSelected,
-                ]}
-                onPress={() => setSelectedRegion(region)}
-              >
-                <Text
-                  style={[
-                    styles.regionChipText,
-                    isSelected && styles.regionChipTextSelected,
-                  ]}
-                >
-                  {region}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
       </View>
 
       <ScrollView
@@ -187,9 +155,6 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
             <Text style={styles.listCount}>{modeTitleMap[exploreMode]}</Text>
             <Text style={styles.listCountStrong}>{filteredSpots.length}곳 발견</Text>
             <Text style={styles.listDescription}>{modeDescriptionMap[exploreMode]}</Text>
-          </View>
-          <View style={styles.apiBadge}>
-            <Text style={styles.apiBadgeText}>TourAPI + Gemini</Text>
           </View>
         </View>
 
@@ -396,9 +361,6 @@ const styles = StyleSheet.create({
   modeTabTextActive: {
     color: '#FFF8D9',
   },
-  regionFilterRow: {
-    gap: 8,
-  },
   gpsPanel: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -440,27 +402,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#FFF8D9',
   },
-  regionChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: '#FFF8D9',
-    borderWidth: 2,
-    borderColor: '#D5B66E',
-  },
-  regionChipSelected: {
-    backgroundColor: '#8A5A2B',
-    borderColor: '#6B3F1D',
-  },
-  regionChipText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#6B4A23',
-  },
-  regionChipTextSelected: {
-    color: '#FFF8D9',
-    fontWeight: '700',
-  },
   listContent: {
     paddingHorizontal: 20,
     paddingTop: 14,
@@ -493,19 +434,6 @@ const styles = StyleSheet.create({
     color: '#466233',
     fontWeight: '700',
     marginTop: 2,
-  },
-  apiBadge: {
-    backgroundColor: '#F7D878',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#C99542',
-  },
-  apiBadgeText: {
-    fontSize: 11,
-    color: '#5C3B16',
-    fontWeight: '900',
   },
   spotCard: {
     backgroundColor: '#FFF8D9',

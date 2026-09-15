@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { HarvestedCrop, Plant, Seed } from '../types';
+import { AvatarId, HarvestedCrop, PetId, Plant, Seed } from '../types';
 import { AnimalCrossingGarden } from './AnimalCrossingGarden';
 
 interface GardenTabProps {
@@ -15,7 +15,13 @@ interface GardenTabProps {
   seeds: Seed[];
   harvestedCrops: HarvestedCrop[];
   farmerName: string;
+  farmName: string;
   money: number;
+  ownedBuildings: string[];
+  avatarId: AvatarId;
+  petId: PetId;
+  dpadScale: number;
+  menuButtonScale: number;
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
@@ -23,6 +29,16 @@ interface GardenTabProps {
   onGoExplore: () => void;
   onGoEncyclopedia: () => void;
   onSellHarvestedCrop: (crop: HarvestedCrop) => void;
+  onBuySeed: (seed: Seed, price: number) => void;
+  onBuyBuilding: (buildingId: string, buildingName: string, price: number) => void;
+  onChangeCharacter: () => void;
+  onChangePet: () => void;
+  onChangeFarmName: (farmName: string) => Promise<void>;
+  onControlSettingsChange: (settings: {
+    dpadScale: number;
+    menuButtonScale: number;
+  }) => Promise<void>;
+  onLogout: () => Promise<void>;
 }
 
 const STAGE_NAMES = ['🌱 씨앗', '🌿 새싹', '🌸 꽃봉오리', '🍊 열매 맺음', '✨ 수확 가능!'];
@@ -32,7 +48,13 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   seeds,
   harvestedCrops,
   farmerName,
+  farmName,
   money,
+  ownedBuildings,
+  avatarId,
+  petId,
+  dpadScale,
+  menuButtonScale,
   onWater,
   onSun,
   onHarvest,
@@ -40,6 +62,13 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   onGoExplore,
   onGoEncyclopedia,
   onSellHarvestedCrop,
+  onBuySeed,
+  onBuyBuilding,
+  onChangeCharacter,
+  onChangePet,
+  onChangeFarmName,
+  onControlSettingsChange,
+  onLogout,
 }) => {
   const [viewMode, setViewMode] = useState<'game' | 'list'>('game');
 
@@ -93,7 +122,13 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           seeds={seeds}
           harvestedCrops={harvestedCrops}
           farmerName={farmerName}
+          farmName={farmName}
           money={money}
+          ownedBuildings={ownedBuildings}
+          avatarId={avatarId}
+          petId={petId}
+          initialDpadScale={dpadScale}
+          initialMenuButtonScale={menuButtonScale}
           onWater={onWater}
           onSun={onSun}
           onHarvest={onHarvest}
@@ -101,6 +136,13 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           onGoExplore={onGoExplore}
           onGoEncyclopedia={onGoEncyclopedia}
           onSellHarvestedCrop={onSellHarvestedCrop}
+          onBuySeed={onBuySeed}
+          onBuyBuilding={onBuyBuilding}
+          onChangeCharacter={onChangeCharacter}
+          onChangePet={onChangePet}
+          onChangeFarmName={onChangeFarmName}
+          onControlSettingsChange={onControlSettingsChange}
+          onLogout={onLogout}
         />
       </View>
     );

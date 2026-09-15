@@ -26,6 +26,11 @@ export interface HarvestedCrop {
   harvestedAt: string;
 }
 
+export type PlayerGender = 'male' | 'female';
+export type TravelStyle = 'nature' | 'culture' | 'activity';
+export type AvatarId = `${PlayerGender}_${TravelStyle}`;
+export type PetId = 'meerkat' | 'capybara' | 'panda';
+
 export interface TouristSpot {
   id: string;
   title: string;

@@ -1,5 +1,16 @@
 import { supabase } from '../lib/supabase';
-import { Plant, Seed, TouristSpot, Coupon, EncyclopediaItem } from '../types';
+import {
+  AvatarId,
+  HarvestedCrop,
+  Plant,
+  PlayerGender,
+  Seed,
+  TouristSpot,
+  Coupon,
+  EncyclopediaItem,
+  TravelStyle,
+  PetId,
+} from '../types';
 import {
   INITIAL_PLANTS,
   INITIAL_SEEDS,
@@ -8,26 +19,65 @@ import {
   INITIAL_ENCYCLOPEDIA,
 } from '../data/mockData';
 
-export const CURRENT_USER_ID = 'user_gardener_01'; // 기본 고유 유저 ID
-
 export const dbService = {
   // 1. 유저 전체 데이터 초기화 및 불러오기
-  async loadUserData(userId: string = CURRENT_USER_ID) {
+  async loadUserData(userId: string) {
     try {
       // 1-1. 유저 프로필 조회 or 생성
       const { data: profile } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
       if (!profile) {
         await supabase.from('user_profiles').upsert({
           id: userId,
           nickname: '로컬 정원사',
-          level: 3,
+          level: 1,
         });
       }
+
+      const farmerName = profile?.nickname ?? '로컬 정원사';
+      const gender = (profile?.gender ?? null) as PlayerGender | null;
+      const travelStyle = (profile?.travel_style ?? null) as TravelStyle | null;
+      const avatarId = (profile?.avatar_id ?? null) as AvatarId | null;
+      const petId = (profile?.pet_id ?? null) as PetId | null;
+
+      const { data: gameState } = await supabase
+        .from('game_states')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!gameState) {
+        await supabase.from('game_states').insert({ user_id: userId, money: 1000 });
+      }
+      const money = gameState?.money ?? 1000;
+      const savedSettings =
+        gameState?.settings && typeof gameState.settings === 'object'
+          ? gameState.settings
+          : {};
+      const dpadScale =
+        typeof savedSettings.dpadScale === 'number' ? savedSettings.dpadScale : 1;
+      const menuButtonScale =
+        typeof savedSettings.menuButtonScale === 'number'
+          ? savedSettings.menuButtonScale
+          : 1;
+      const farmName =
+        typeof savedSettings.farmName === 'string' && savedSettings.farmName.trim()
+          ? savedSettings.farmName.trim()
+          : `${farmerName.trim() || '나'}의 농장`;
+      const harvestedCrops: HarvestedCrop[] = Array.isArray(gameState?.harvested_crops)
+        ? gameState.harvested_crops
+        : [];
+      const farmLayout =
+        gameState?.farm_layout && typeof gameState.farm_layout === 'object'
+          ? gameState.farm_layout
+          : {};
+      const ownedBuildings: string[] = Array.isArray(farmLayout.ownedBuildings)
+        ? farmLayout.ownedBuildings
+        : [];
 
       // 1-2. 작물(Plants) 조회
       const { data: plantsData } = await supabase
@@ -141,6 +191,17 @@ export const dbService = {
           touristSpots,
           coupons,
           encyclopedia,
+          farmerName,
+          money,
+          harvestedCrops,
+          ownedBuildings,
+          gender,
+          travelStyle,
+          avatarId,
+          petId,
+          dpadScale,
+          menuButtonScale,
+          farmName,
         },
       };
     } catch (error) {
@@ -153,9 +214,95 @@ export const dbService = {
           touristSpots: TOURIST_SPOTS,
           coupons: INITIAL_COUPONS,
           encyclopedia: INITIAL_ENCYCLOPEDIA,
+          farmerName: '로컬 정원사',
+          money: 1000,
+          harvestedCrops: [],
+          ownedBuildings: [],
+          gender: null,
+          travelStyle: null,
+          avatarId: null,
+          petId: null,
+          dpadScale: 1,
+          menuButtonScale: 1,
+          farmName: '나의 농장',
         },
       };
     }
+  },
+
+  async updateFarmerName(userId: string, farmerName: string) {
+    const { error } = await supabase
+      .from('user_profiles')
+      .upsert({
+        id: userId,
+        nickname: farmerName,
+        updated_at: new Date().toISOString(),
+      });
+    if (error) throw error;
+  },
+
+  async updateControlSettings(
+    userId: string,
+    settings: { dpadScale: number; menuButtonScale: number; farmName: string }
+  ) {
+    const { error } = await supabase
+      .from('game_states')
+      .upsert({
+        user_id: userId,
+        settings,
+        updated_at: new Date().toISOString(),
+      });
+    if (error) throw error;
+  },
+
+  async updatePlayerProfile(
+    userId: string,
+    gender: PlayerGender,
+    travelStyle: TravelStyle,
+    avatarId: AvatarId
+  ) {
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({
+        gender,
+        travel_style: travelStyle,
+        avatar_id: avatarId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
+    if (error) throw error;
+  },
+
+  async updatePet(userId: string, petId: PetId) {
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({ pet_id: petId, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+    if (error) throw error;
+  },
+
+  async updateGameState(
+    userId: string,
+    changes: {
+      money?: number;
+      harvestedCrops?: HarvestedCrop[];
+      ownedBuildings?: string[];
+    }
+  ) {
+    const row: Record<string, unknown> = {
+      user_id: userId,
+      updated_at: new Date().toISOString(),
+    };
+    if (changes.money !== undefined) row.money = changes.money;
+    if (changes.harvestedCrops !== undefined) {
+      row.harvested_crops = changes.harvestedCrops;
+    }
+    if (changes.ownedBuildings !== undefined) {
+      row.farm_layout = { ownedBuildings: changes.ownedBuildings };
+    }
+
+    const { error } = await supabase.from('game_states').upsert(row);
+    if (error) throw error;
   },
 
   // 작물 동기화

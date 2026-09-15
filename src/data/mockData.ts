@@ -2,15 +2,7 @@ import { TouristSpot, Seed, Plant, Coupon, EncyclopediaItem } from '../types';
 
 export const INITIAL_PLANTS: Plant[] = [];
 
-export const INITIAL_SEEDS: Seed[] = [
-  {
-    id: 's1',
-    name: '강원 찰옥수수 씨앗',
-    region: '강원',
-    emoji: '🌽',
-    description: '정선 아우라지 탐방 인증으로 획득한 고랭지 찰옥수수 씨앗',
-  },
-];
+export const INITIAL_SEEDS: Seed[] = [];
 
 export const TOURIST_SPOTS: TouristSpot[] = [
   {

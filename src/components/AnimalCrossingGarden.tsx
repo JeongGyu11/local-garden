@@ -9,18 +9,29 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { HarvestedCrop, Plant, Seed } from '../types';
+import { AvatarId, HarvestedCrop, PetId, Plant, Seed } from '../types';
+import { getAvatarDefinition } from '../data/avatarData';
+import { getPetDefinition } from '../data/petData';
+import { PetCharacter } from './PetCharacter';
+import { PlayerCharacter } from './PlayerCharacter';
 
 interface AnimalCrossingGardenProps {
   plants: Plant[];
   seeds: Seed[];
   harvestedCrops: HarvestedCrop[];
   farmerName: string;
+  farmName: string;
   money: number;
+  ownedBuildings: string[];
+  avatarId: AvatarId;
+  petId: PetId;
+  initialDpadScale: number;
+  initialMenuButtonScale: number;
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
@@ -28,6 +39,16 @@ interface AnimalCrossingGardenProps {
   onGoExplore: () => void;
   onGoEncyclopedia: () => void;
   onSellHarvestedCrop: (crop: HarvestedCrop) => void;
+  onBuySeed: (seed: Seed, price: number) => void;
+  onBuyBuilding: (buildingId: string, buildingName: string, price: number) => void;
+  onChangeCharacter: () => void;
+  onChangePet: () => void;
+  onChangeFarmName: (farmName: string) => Promise<void>;
+  onControlSettingsChange: (settings: {
+    dpadScale: number;
+    menuButtonScale: number;
+  }) => Promise<void>;
+  onLogout: () => Promise<void>;
 }
 
 interface MapPoint {
@@ -48,6 +69,15 @@ const PLOTS: Plot[] = [
 ];
 
 const SHOP = { x: 82, y: 31, emoji: '🏪', label: '상점' };
+const SHOP_SEEDS: Array<{ seed: Seed; price: number }> = [
+  { seed: { id: 'shop_carrot', name: '당근 씨앗', region: '전국', emoji: '🥕', description: '상점에서 구매한 튼튼한 당근 씨앗' }, price: 150 },
+  { seed: { id: 'shop_tomato', name: '토마토 씨앗', region: '전국', emoji: '🍅', description: '상점에서 구매한 새콤달콤 토마토 씨앗' }, price: 200 },
+  { seed: { id: 'shop_corn', name: '옥수수 씨앗', region: '강원', emoji: '🌽', description: '상점에서 구매한 고소한 옥수수 씨앗' }, price: 250 },
+];
+const SHOP_BUILDINGS = [
+  { id: 'storage_shed', name: '씨앗 창고', emoji: '🏚️', description: '씨앗을 보관하는 아담한 창고', price: 600 },
+  { id: 'greenhouse', name: '작은 온실', emoji: '🏡', description: '작물을 따뜻하게 키우는 유리 온실', price: 900 },
+];
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const distance = (a: MapPoint, b: MapPoint) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -59,6 +89,10 @@ type DragStart = {
   pageY: number;
   position: MapPoint;
 } | null;
+const MIN_DPAD_SCALE = 0.7;
+const MAX_DPAD_SCALE = 1.4;
+const MIN_MENU_BUTTON_SCALE = 0.7;
+const MAX_MENU_BUTTON_SCALE = 1.4;
 
 const createPlotLabelFromSeed = (seed: Seed) => {
   const seedBase = seed.name.replace(/\s*씨앗$/, '').trim();
@@ -70,7 +104,13 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   seeds,
   harvestedCrops,
   farmerName,
+  farmName,
   money,
+  ownedBuildings,
+  avatarId,
+  petId,
+  initialDpadScale,
+  initialMenuButtonScale,
   onWater,
   onSun,
   onHarvest,
@@ -78,13 +118,32 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   onGoExplore,
   onGoEncyclopedia,
   onSellHarvestedCrop,
+  onBuySeed,
+  onBuyBuilding,
+  onChangeCharacter,
+  onChangePet,
+  onChangeFarmName,
+  onControlSettingsChange,
+  onLogout,
 }) => {
   const { height } = useWindowDimensions();
   const [charPos, setCharPos] = useState<MapPoint>({ x: 50, y: 78 });
+  const [petPos, setPetPos] = useState<MapPoint>({ x: 45.5, y: 80 });
+  const previousCharPosRef = useRef<MapPoint>({ x: 50, y: 78 });
   const [direction, setDirection] = useState<'down' | 'up' | 'left' | 'right'>('down');
   const [isWalking, setIsWalking] = useState(false);
   const [bagVisible, setBagVisible] = useState(false);
   const [shopVisible, setShopVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [dpadScale, setDpadScale] = useState(initialDpadScale);
+  const [dpadSliderWidth, setDpadSliderWidth] = useState(0);
+  const [menuButtonScale, setMenuButtonScale] = useState(initialMenuButtonScale);
+  const [menuButtonSliderWidth, setMenuButtonSliderWidth] = useState(0);
+  const dpadScaleRef = useRef(initialDpadScale);
+  const menuButtonScaleRef = useRef(initialMenuButtonScale);
+  const [farmNameDraft, setFarmNameDraft] = useState(farmName);
+  const [savingFarmName, setSavingFarmName] = useState(false);
   const [movingTarget, setMovingTarget] = useState<MovingTarget>(null);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
   const [plotPositions, setPlotPositions] = useState<Record<number, MapPoint>>(
@@ -103,7 +162,6 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const [floatingEffect, setFloatingEffect] = useState<{ text: string; x: number; y: number } | null>(null);
 
   const mapMinHeight = Math.max(540, height - 150);
-  const farmName = `${farmerName.trim() || '나'}의 농장`;
   const placedPlots = PLOTS.map((plot) => ({
     ...plot,
     ...(plotPositions[plot.id] ?? { x: plot.x, y: plot.y }),
@@ -112,6 +170,123 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const nearbyPlot = nearbyPlotIndex >= 0 ? placedPlots[nearbyPlotIndex] : null;
   const currentPlantInPlot = nearbyPlotIndex >= 0 ? plants[nearbyPlotIndex] : null;
   const isNearShop = distance(shopPosition, charPos) < 10;
+  const dpadButtonSize = Math.round(39 * dpadScale);
+  const dpadCenterSize = Math.round(38 * dpadScale);
+  const dpadIconSize = Math.round(20 * dpadScale);
+  const dpadScalePercent = Math.round(dpadScale * 100);
+  const dpadSliderPercent =
+    ((dpadScale - MIN_DPAD_SCALE) / (MAX_DPAD_SCALE - MIN_DPAD_SCALE)) * 100;
+  const menuButtonWidth = Math.round(102 * menuButtonScale);
+  const menuButtonHeight = Math.round(50 * menuButtonScale);
+  const menuActionHeight = Math.round(56 * menuButtonScale);
+  const menuButtonIconSize = Math.round(19 * menuButtonScale);
+  const menuButtonFontSize = Math.round(12 * menuButtonScale);
+  const menuButtonScalePercent = Math.round(menuButtonScale * 100);
+  const menuButtonSliderPercent =
+    ((menuButtonScale - MIN_MENU_BUTTON_SCALE) /
+      (MAX_MENU_BUTTON_SCALE - MIN_MENU_BUTTON_SCALE)) *
+    100;
+  const menuButtonStyle = {
+    minWidth: menuButtonWidth,
+    height: menuButtonHeight,
+    gap: Math.max(4, Math.round(6 * menuButtonScale)),
+  };
+  const menuButtonTextStyle = { fontSize: menuButtonFontSize };
+  const isFemaleAvatar = avatarId.startsWith('female_');
+  const avatarTravelStyle = avatarId.split('_')[1] as 'nature' | 'culture' | 'activity';
+  const avatarTheme = {
+    nature: { shirt: '#F2E3A4', overall: '#3E7750', icon: 'leaf' as const },
+    culture: { shirt: '#F4D0A1', overall: '#A86632', icon: 'book' as const },
+    activity: { shirt: '#D7E7ED', overall: '#39739D', icon: 'compass' as const },
+  }[avatarTravelStyle];
+  const avatarDefinition = getAvatarDefinition(avatarId);
+  const petDefinition = getPetDefinition(petId);
+
+  useEffect(() => {
+    const followTarget = previousCharPosRef.current;
+    previousCharPosRef.current = charPos;
+    const timer = setTimeout(() => setPetPos(followTarget), 170);
+    return () => clearTimeout(timer);
+  }, [charPos]);
+
+  useEffect(() => {
+    setDpadScale(initialDpadScale);
+    dpadScaleRef.current = initialDpadScale;
+  }, [initialDpadScale]);
+
+  useEffect(() => {
+    setMenuButtonScale(initialMenuButtonScale);
+    menuButtonScaleRef.current = initialMenuButtonScale;
+  }, [initialMenuButtonScale]);
+
+  useEffect(() => setFarmNameDraft(farmName), [farmName]);
+
+  const updateDpadScaleFromSlider = (event: GestureResponderEvent) => {
+    if (dpadSliderWidth <= 0) {
+      return;
+    }
+    const ratio = clamp(event.nativeEvent.locationX / dpadSliderWidth, 0, 1);
+    const nextScale = MIN_DPAD_SCALE + ratio * (MAX_DPAD_SCALE - MIN_DPAD_SCALE);
+    const roundedScale = Math.round(nextScale * 100) / 100;
+    dpadScaleRef.current = roundedScale;
+    setDpadScale(roundedScale);
+  };
+
+  const updateMenuButtonScaleFromSlider = (event: GestureResponderEvent) => {
+    if (menuButtonSliderWidth <= 0) {
+      return;
+    }
+    const ratio = clamp(event.nativeEvent.locationX / menuButtonSliderWidth, 0, 1);
+    const nextScale =
+      MIN_MENU_BUTTON_SCALE + ratio * (MAX_MENU_BUTTON_SCALE - MIN_MENU_BUTTON_SCALE);
+    const roundedScale = Math.round(nextScale * 100) / 100;
+    menuButtonScaleRef.current = roundedScale;
+    setMenuButtonScale(roundedScale);
+  };
+
+  const saveControlSettings = async () => {
+    try {
+      await onControlSettingsChange({
+        dpadScale: dpadScaleRef.current,
+        menuButtonScale: menuButtonScaleRef.current,
+      });
+    } catch (error) {
+      console.warn('Control settings save error:', error);
+      Alert.alert('설정 저장 실패', '인터넷 연결을 확인하고 다시 시도해주세요.');
+    }
+  };
+
+  const handleSaveFarmName = async () => {
+    if (savingFarmName) return;
+    const nextName = farmNameDraft.trim();
+    if (!nextName) {
+      Alert.alert('농장 이름', '농장 이름을 입력해주세요.');
+      return;
+    }
+    setSavingFarmName(true);
+    try {
+      await onChangeFarmName(nextName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '농장 이름을 저장하지 못했습니다.';
+      Alert.alert('농장 이름 저장 실패', message);
+    } finally {
+      setSavingFarmName(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await onLogout();
+      setSettingsVisible(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '로그아웃 중 문제가 발생했습니다.';
+      Alert.alert('로그아웃 실패', message);
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   const moveCharacter = (dx: number, dy: number, dir: 'down' | 'up' | 'left' | 'right') => {
     setDirection(dir);
@@ -344,22 +519,28 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
     if (nearbyPlot) {
       return (
         <Pressable
-          style={styles.primaryActionButton}
+          style={[
+            styles.primaryActionButton,
+            { minWidth: menuButtonWidth, height: menuActionHeight },
+          ]}
           onPress={(event) => handleControlPress(event, handlePlantSeed)}
         >
-          <Ionicons name="leaf" size={18} color="#FFF7D6" />
-          <Text style={styles.actionButtonText}>심기</Text>
+          <Ionicons name="leaf" size={menuButtonIconSize} color="#FFF7D6" />
+          <Text style={[styles.actionButtonText, menuButtonTextStyle]}>심기</Text>
         </Pressable>
       );
     }
 
     return (
       <Pressable
-        style={styles.primaryActionButton}
+        style={[
+          styles.primaryActionButton,
+          { minWidth: menuButtonWidth, height: menuActionHeight },
+        ]}
         onPress={(event) => handleControlPress(event, onGoExplore)}
       >
-        <Ionicons name="compass" size={18} color="#FFF7D6" />
-        <Text style={styles.actionButtonText}>탐험</Text>
+        <Ionicons name="compass" size={menuButtonIconSize} color="#FFF7D6" />
+        <Text style={[styles.actionButtonText, menuButtonTextStyle]}>탐험</Text>
       </Pressable>
     );
   };
@@ -490,13 +671,28 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           style={[
             styles.characterSprite,
             { left: `${charPos.x}%`, top: `${charPos.y}%` },
-            isWalking && styles.characterWalking,
           ]}
         >
-          <View style={styles.playerShadow} />
-          <View style={styles.avatarBubble}>
-            <Text style={styles.characterEmoji}>{direction === 'up' ? '🧑‍🌾' : '🧑‍🌾'}</Text>
-          </View>
+          <PlayerCharacter
+            avatarId={avatarId}
+            size={52}
+            direction={direction}
+            isWalking={isWalking}
+          />
+        </View>
+
+        <View
+          pointerEvents="none"
+          style={[
+            styles.petSprite,
+            { left: `${petPos.x}%`, top: `${petPos.y}%` },
+            isWalking && styles.petWalking,
+            direction === 'left' && styles.petFacingLeft,
+          ]}
+        >
+          <View style={styles.petShadow} />
+          <PetCharacter petId={petId} size={43} />
+          <View style={styles.petNameTag}><Text style={styles.petNameTagText}>{petDefinition.name}</Text></View>
         </View>
 
         {floatingEffect && (
@@ -528,52 +724,80 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
         </View>
 
         <View style={styles.bottomHud} pointerEvents="box-none">
-          <View style={styles.dpad}>
+          <View
+            style={[
+              styles.dpad,
+              { width: 122 * dpadScale, height: 122 * dpadScale },
+            ]}
+          >
             <Pressable
-              style={[styles.dpadBtn, styles.dpadUp]}
+              style={[
+                styles.dpadBtn,
+                styles.dpadUp,
+                { width: dpadButtonSize, height: dpadButtonSize },
+              ]}
               onPress={(event) => handleControlPress(event, () => moveCharacter(0, -4.5, 'up'))}
             >
-              <Ionicons name="chevron-up" size={20} color="#FFF7D6" />
+              <Ionicons name="chevron-up" size={dpadIconSize} color="#FFF7D6" />
             </Pressable>
             <View style={styles.dpadMid}>
               <Pressable
-                style={styles.dpadBtn}
+                style={[styles.dpadBtn, { width: dpadButtonSize, height: dpadButtonSize }]}
                 onPress={(event) => handleControlPress(event, () => moveCharacter(-4.5, 0, 'left'))}
               >
-                <Ionicons name="chevron-back" size={20} color="#FFF7D6" />
+                <Ionicons name="chevron-back" size={dpadIconSize} color="#FFF7D6" />
               </Pressable>
-              <View style={styles.dpadCenter}>
-                <Text style={styles.dpadCenterText}>MOVE</Text>
+              <View
+                style={[
+                  styles.dpadCenter,
+                  { width: dpadCenterSize, height: dpadCenterSize },
+                ]}
+              >
+                <Text style={[styles.dpadCenterText, { fontSize: 8 * dpadScale }]}>MOVE</Text>
               </View>
               <Pressable
-                style={styles.dpadBtn}
+                style={[styles.dpadBtn, { width: dpadButtonSize, height: dpadButtonSize }]}
                 onPress={(event) => handleControlPress(event, () => moveCharacter(4.5, 0, 'right'))}
               >
-                <Ionicons name="chevron-forward" size={20} color="#FFF7D6" />
+                <Ionicons name="chevron-forward" size={dpadIconSize} color="#FFF7D6" />
               </Pressable>
             </View>
             <Pressable
-              style={[styles.dpadBtn, styles.dpadDown]}
+              style={[
+                styles.dpadBtn,
+                styles.dpadDown,
+                { width: dpadButtonSize, height: dpadButtonSize },
+              ]}
               onPress={(event) => handleControlPress(event, () => moveCharacter(0, 4.5, 'down'))}
             >
-              <Ionicons name="chevron-down" size={20} color="#FFF7D6" />
+              <Ionicons name="chevron-down" size={dpadIconSize} color="#FFF7D6" />
             </Pressable>
           </View>
 
           <View style={styles.rightDock}>
             <Pressable
-              style={styles.bookButton}
-              onPress={(event) => handleControlPress(event, onGoEncyclopedia)}
+              style={[styles.settingsButton, menuButtonStyle]}
+              onPress={(event) => handleControlPress(event, () => {
+                setFarmNameDraft(farmName);
+                setSettingsVisible(true);
+              })}
             >
-              <Ionicons name="book" size={19} color="#FFF7D6" />
-              <Text style={styles.bagButtonText}>도감</Text>
+              <Ionicons name="settings" size={menuButtonIconSize} color="#FFF7D6" />
+              <Text style={[styles.bagButtonText, menuButtonTextStyle]}>설정</Text>
             </Pressable>
             <Pressable
-              style={styles.bagButton}
+              style={[styles.bookButton, menuButtonStyle]}
+              onPress={(event) => handleControlPress(event, onGoEncyclopedia)}
+            >
+              <Ionicons name="book" size={menuButtonIconSize} color="#FFF7D6" />
+              <Text style={[styles.bagButtonText, menuButtonTextStyle]}>도감</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.bagButton, menuButtonStyle]}
               onPress={(event) => handleControlPress(event, () => setBagVisible(true))}
             >
-              <Ionicons name="bag-handle" size={19} color="#FFF7D6" />
-              <Text style={styles.bagButtonText}>가방</Text>
+              <Ionicons name="bag-handle" size={menuButtonIconSize} color="#FFF7D6" />
+              <Text style={[styles.bagButtonText, menuButtonTextStyle]}>가방</Text>
               <View style={styles.bagCountBadge}>
                 <Text style={styles.bagCountText}>{seeds.length + harvestedCrops.length}</Text>
               </View>
@@ -582,6 +806,167 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           </View>
         </View>
       </Pressable>
+
+      <Modal
+        visible={settingsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSettingsVisible(false)}
+      >
+        <View style={styles.bagBackdrop}>
+          <View style={styles.settingsModal}>
+            <View style={styles.settingsHeader}>
+              <View>
+                <Text style={styles.bagEyebrow}>플레이 환경</Text>
+                <Text style={styles.bagTitle}>설정</Text>
+              </View>
+              <Pressable style={styles.bagCloseButton} onPress={() => setSettingsVisible(false)}>
+                <Ionicons name="close" size={20} color="#FFF7D6" />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.settingsContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.settingsSectionTitle}>농장 이름</Text>
+              <Text style={styles.settingsDescription}>
+                입력한 이름이 농장 화면에 그대로 표시됩니다.
+              </Text>
+              <View style={styles.farmNameRow}>
+                <TextInput
+                  style={styles.farmNameInput}
+                  value={farmNameDraft}
+                  onChangeText={setFarmNameDraft}
+                  maxLength={20}
+                  placeholder="농장 이름"
+                  placeholderTextColor="#8A7956"
+                  returnKeyType="done"
+                  onSubmitEditing={handleSaveFarmName}
+                />
+                <Pressable
+                  style={[styles.farmNameSaveButton, savingFarmName && styles.logoutButtonDisabled]}
+                  onPress={handleSaveFarmName}
+                  disabled={savingFarmName}
+                >
+                  <Text style={styles.farmNameSaveButtonText}>
+                    {savingFarmName ? '저장 중' : '저장'}
+                  </Text>
+                </Pressable>
+              </View>
+              <View style={styles.settingsDivider} />
+              <Text style={styles.settingsSectionTitle}>내 캐릭터</Text>
+              <View style={styles.currentAvatarCard}>
+                <View style={[styles.currentAvatarIcon, { backgroundColor: avatarDefinition.color }]}>
+                  <Text style={styles.currentAvatarEmoji}>{avatarDefinition.emoji}</Text>
+                  <Text style={styles.currentAvatarStyleEmoji}>{avatarDefinition.styleEmoji}</Text>
+                </View>
+                <View style={styles.currentAvatarCopy}>
+                  <Text style={styles.currentAvatarName}>{avatarDefinition.name}</Text>
+                  <Text style={styles.currentAvatarDescription} numberOfLines={2}>{avatarDefinition.description}</Text>
+                </View>
+                <Pressable
+                  style={styles.changeAvatarButton}
+                  onPress={() => {
+                    setSettingsVisible(false);
+                    onChangeCharacter();
+                  }}
+                >
+                  <Text style={styles.changeAvatarButtonText}>변경</Text>
+                </Pressable>
+              </View>
+              <View style={styles.settingsDivider} />
+              <Text style={styles.settingsSectionTitle}>동행 친구</Text>
+              <View style={styles.currentAvatarCard}>
+                <View style={styles.currentPetIcon}>
+                  <PetCharacter petId={petId} size={42} />
+                </View>
+                <View style={styles.currentAvatarCopy}>
+                  <Text style={styles.currentAvatarName}>{petDefinition.name}</Text>
+                  <Text style={styles.currentAvatarDescription} numberOfLines={2}>{petDefinition.description}</Text>
+                </View>
+                <Pressable
+                  style={styles.changeAvatarButton}
+                  onPress={() => {
+                    setSettingsVisible(false);
+                    onChangePet();
+                  }}
+                >
+                  <Text style={styles.changeAvatarButtonText}>변경</Text>
+                </Pressable>
+              </View>
+              <View style={styles.settingsDivider} />
+              <Text style={styles.settingsSectionTitle}>메뉴 버튼 크기</Text>
+              <Text style={styles.settingsDescription}>
+                설정·도감·가방·탐험·심기 버튼의 크기를 한 번에 조절하세요.
+              </Text>
+              <View style={styles.sliderValueRow}>
+                <Text style={styles.sliderEdgeLabel}>작게</Text>
+                <Text style={styles.sliderValue}>{menuButtonScalePercent}%</Text>
+                <Text style={styles.sliderEdgeLabel}>크게</Text>
+              </View>
+              <View
+                style={styles.dpadSliderTouchArea}
+                onLayout={(event) => setMenuButtonSliderWidth(event.nativeEvent.layout.width)}
+                onStartShouldSetResponder={() => true}
+                onMoveShouldSetResponder={() => true}
+                onResponderGrant={updateMenuButtonScaleFromSlider}
+                onResponderMove={updateMenuButtonScaleFromSlider}
+                onResponderRelease={saveControlSettings}
+              >
+                <View style={styles.dpadSliderTrack}>
+                  <View
+                    style={[styles.dpadSliderFill, { width: `${menuButtonSliderPercent}%` }]}
+                  />
+                </View>
+                <View
+                  style={[styles.dpadSliderThumb, { left: `${menuButtonSliderPercent}%` }]}
+                >
+                  <Ionicons name="resize" size={16} color="#FFF7D6" />
+                </View>
+              </View>
+              <View style={styles.settingsDivider} />
+              <Text style={styles.settingsSectionTitle}>이동키 크기</Text>
+              <Text style={styles.settingsDescription}>
+                손잡이를 좌우로 움직여 플레이하기 편한 크기로 조절하세요.
+              </Text>
+              <View style={styles.sliderValueRow}>
+                <Text style={styles.sliderEdgeLabel}>작게</Text>
+                <Text style={styles.sliderValue}>{dpadScalePercent}%</Text>
+                <Text style={styles.sliderEdgeLabel}>크게</Text>
+              </View>
+              <View
+                style={styles.dpadSliderTouchArea}
+                onLayout={(event) => setDpadSliderWidth(event.nativeEvent.layout.width)}
+                onStartShouldSetResponder={() => true}
+                onMoveShouldSetResponder={() => true}
+                onResponderGrant={updateDpadScaleFromSlider}
+                onResponderMove={updateDpadScaleFromSlider}
+                onResponderRelease={saveControlSettings}
+              >
+                <View style={styles.dpadSliderTrack}>
+                  <View style={[styles.dpadSliderFill, { width: `${dpadSliderPercent}%` }]} />
+                </View>
+                <View style={[styles.dpadSliderThumb, { left: `${dpadSliderPercent}%` }]}>
+                  <Ionicons name="resize" size={16} color="#FFF7D6" />
+                </View>
+              </View>
+              <View style={styles.settingsDivider} />
+              <Pressable
+                style={({ pressed }) => [
+                  styles.logoutButton,
+                  pressed && styles.logoutButtonPressed,
+                  loggingOut && styles.logoutButtonDisabled,
+                ]}
+                onPress={handleLogout}
+                disabled={loggingOut}
+              >
+                <Ionicons name="log-out-outline" size={19} color="#8B2F2F" />
+                <Text style={styles.logoutButtonText}>
+                  {loggingOut ? '로그아웃 중...' : '로그아웃'}
+                </Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={bagVisible}
@@ -660,6 +1045,60 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                   <Text style={styles.emptyBagText}>판매할 수확물이 없습니다. 다 자란 작물을 수확해보세요.</Text>
                 </View>
               )}
+
+              <View style={[styles.bagSectionHeader, styles.shopSectionSpacing]}>
+                <Text style={styles.bagSectionTitle}>씨앗 구매</Text>
+                <Text style={styles.bagSectionCount}>가방으로 바로 지급</Text>
+              </View>
+              {SHOP_SEEDS.map(({ seed, price }) => (
+                <View key={seed.id} style={styles.shopCropItem}>
+                  <View style={styles.bagItemIcon}>
+                    <Text style={styles.bagItemEmoji}>{seed.emoji}</Text>
+                  </View>
+                  <View style={styles.bagItemCopy}>
+                    <Text style={styles.bagItemName}>{seed.name}</Text>
+                    <Text style={styles.bagItemMeta}>{seed.description}</Text>
+                  </View>
+                  <Pressable
+                    style={[styles.buyButton, money < price && styles.unavailableButton]}
+                    onPress={() => onBuySeed(seed, price)}
+                  >
+                    <Text style={styles.buyButtonText}>{price}G 구매</Text>
+                  </Pressable>
+                </View>
+              ))}
+
+              <View style={[styles.bagSectionHeader, styles.shopSectionSpacing]}>
+                <Text style={styles.bagSectionTitle}>건물 구매</Text>
+                <Text style={styles.bagSectionCount}>계정당 1회 구매</Text>
+              </View>
+              {SHOP_BUILDINGS.map((building) => {
+                const isOwned = ownedBuildings.includes(building.id);
+                return (
+                  <View key={building.id} style={styles.shopCropItem}>
+                    <View style={styles.bagItemIcon}>
+                      <Text style={styles.bagItemEmoji}>{building.emoji}</Text>
+                    </View>
+                    <View style={styles.bagItemCopy}>
+                      <Text style={styles.bagItemName}>{building.name}</Text>
+                      <Text style={styles.bagItemMeta}>{building.description}</Text>
+                    </View>
+                    <Pressable
+                      style={[
+                        styles.buyButton,
+                        (isOwned || money < building.price) && styles.unavailableButton,
+                      ]}
+                      onPress={() =>
+                        onBuyBuilding(building.id, building.name, building.price)
+                      }
+                    >
+                      <Text style={styles.buyButtonText}>
+                        {isOwned ? '보유 중' : `${building.price}G 구매`}
+                      </Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
             </ScrollView>
           </View>
         </View>
@@ -810,10 +1249,10 @@ const styles = StyleSheet.create({
   },
   characterSprite: {
     position: 'absolute',
-    width: 58,
-    height: 64,
-    marginLeft: -29,
-    marginTop: -52,
+    width: 64,
+    height: 88,
+    marginLeft: -32,
+    marginTop: -76,
     alignItems: 'center',
     justifyContent: 'flex-end',
     zIndex: 20,
@@ -821,23 +1260,205 @@ const styles = StyleSheet.create({
   characterWalking: {
     transform: [{ translateY: -4 }],
   },
-  avatarBubble: {
+  farmerCharacter: {
+    width: 54,
+    height: 82,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  characterFacingLeft: {
+    transform: [{ scaleX: -1 }],
+  },
+  hatCrown: {
+    position: 'absolute',
+    top: 0,
+    width: 34,
+    height: 15,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    backgroundColor: '#E7BD54',
+    borderWidth: 2,
+    borderColor: '#5B3A1F',
+    zIndex: 8,
+    overflow: 'hidden',
+  },
+  hatBand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 1,
+    height: 4,
+    backgroundColor: '#3D7547',
+  },
+  hatBrim: {
+    position: 'absolute',
+    top: 12,
     width: 48,
-    height: 48,
-    borderRadius: 8,
+    height: 8,
+    borderRadius: 5,
+    backgroundColor: '#F2CD69',
+    borderWidth: 2,
+    borderColor: '#5B3A1F',
+    zIndex: 9,
+  },
+  characterHead: {
+    position: 'absolute',
+    top: 16,
+    width: 34,
+    height: 33,
+    borderRadius: 13,
+    backgroundColor: '#F4B57B',
+    borderWidth: 2,
+    borderColor: '#56371F',
+    zIndex: 7,
+  },
+  characterHeadBack: {
+    backgroundColor: '#704329',
+  },
+  longHairBack: {
+    position: 'absolute',
+    top: 17,
+    width: 39,
+    height: 40,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+    backgroundColor: '#704329',
+    borderWidth: 2,
+    borderColor: '#56371F',
+    zIndex: 6,
+  },
+  hairLeft: {
+    position: 'absolute',
+    left: -2,
+    top: 2,
+    width: 7,
+    height: 18,
+    borderRadius: 4,
+    backgroundColor: '#704329',
+  },
+  hairRight: {
+    position: 'absolute',
+    right: -2,
+    top: 2,
+    width: 7,
+    height: 18,
+    borderRadius: 4,
+    backgroundColor: '#704329',
+  },
+  eyeLeft: {
+    position: 'absolute',
+    left: 8,
+    top: 13,
+    width: 3,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#34251B',
+  },
+  eyeRight: {
+    position: 'absolute',
+    right: 8,
+    top: 13,
+    width: 3,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#34251B',
+  },
+  cheekLeft: {
+    position: 'absolute',
+    left: 4,
+    top: 20,
+    width: 5,
+    height: 3,
+    borderRadius: 3,
+    backgroundColor: '#E88672',
+  },
+  cheekRight: {
+    position: 'absolute',
+    right: 4,
+    top: 20,
+    width: 5,
+    height: 3,
+    borderRadius: 3,
+    backgroundColor: '#E88672',
+  },
+  smile: {
+    position: 'absolute',
+    left: 13,
+    top: 21,
+    width: 6,
+    height: 4,
+    borderBottomWidth: 2,
+    borderBottomColor: '#5B3426',
+    borderRadius: 5,
+  },
+  characterBodyRow: {
+    position: 'absolute',
+    top: 46,
+    height: 25,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    zIndex: 5,
+  },
+  characterTorso: {
+    width: 28,
+    height: 27,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    backgroundColor: '#F2E3A4',
+    borderWidth: 2,
+    borderColor: '#4B3822',
+    alignItems: 'center',
+  },
+  overallBib: {
+    position: 'absolute',
+    bottom: 0,
+    width: 19,
+    height: 17,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    backgroundColor: '#3E7750',
+    borderWidth: 1,
+    borderColor: '#24492E',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,247,214,0.38)',
-    borderWidth: 3,
-    borderColor: '#FFF7D6',
   },
-  characterEmoji: {
-    fontSize: 31,
+  characterArm: {
+    width: 9,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: '#F4B57B',
+    borderWidth: 2,
+    borderColor: '#56371F',
+    marginTop: 2,
+  },
+  characterArmLeft: {
+    transform: [{ rotate: '8deg' }],
+    marginRight: -1,
+  },
+  characterArmRight: {
+    transform: [{ rotate: '-8deg' }],
+    marginLeft: -1,
+  },
+  characterLegs: {
+    position: 'absolute',
+    bottom: 0,
+    flexDirection: 'row',
+    gap: 3,
+    zIndex: 4,
+  },
+  characterLeg: {
+    width: 11,
+    height: 15,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4,
+    backgroundColor: '#385C43',
+    borderWidth: 2,
+    borderColor: '#253A2B',
   },
   playerShadow: {
     position: 'absolute',
-    bottom: 2,
-    width: 34,
+    bottom: -1,
+    width: 40,
     height: 9,
     borderRadius: 18,
     backgroundColor: 'rgba(36, 29, 18, 0.28)',
@@ -1029,6 +1650,39 @@ const styles = StyleSheet.create({
     shadowRadius: 7,
     elevation: 4,
   },
+  petSprite: {
+    position: 'absolute',
+    width: 54,
+    height: 58,
+    marginLeft: -27,
+    marginTop: -34,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    zIndex: 18,
+  },
+  petWalking: { transform: [{ translateY: -3 }] },
+  petFacingLeft: { transform: [{ scaleX: -1 }] },
+  petShadow: { position: 'absolute', bottom: 13, width: 34, height: 8, borderRadius: 17, backgroundColor: 'rgba(36,29,18,0.25)' },
+  petNameTag: { marginTop: 1, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: 'rgba(35,53,42,0.82)' },
+  petNameTagText: { color: '#FFF7D6', fontSize: 8, fontWeight: '900' },
+  currentPetIcon: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center' },
+  settingsButton: {
+    minWidth: 102,
+    height: 50,
+    borderRadius: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#59652F',
+    borderWidth: 2,
+    borderColor: 'rgba(255,247,214,0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 7,
+    elevation: 4,
+  },
   bagButtonText: {
     color: '#FFF7D6',
     fontSize: 12,
@@ -1106,6 +1760,169 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#7A5328',
     overflow: 'hidden',
+  },
+  settingsModal: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#FFF7D6',
+    borderRadius: 8,
+    borderWidth: 3,
+    borderColor: '#59652F',
+    overflow: 'hidden',
+    maxHeight: '90%',
+  },
+  settingsHeader: {
+    minHeight: 68,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#42592A',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  settingsContent: {
+    padding: 18,
+  },
+  settingsSectionTitle: {
+    color: '#2B3F24',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  farmNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  farmNameInput: {
+    flex: 1,
+    height: 44,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#B99B58',
+    backgroundColor: '#FFFDF2',
+    paddingHorizontal: 12,
+    color: '#2B3F24',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  farmNameSaveButton: {
+    height: 44,
+    minWidth: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 7,
+    backgroundColor: '#42592A',
+    paddingHorizontal: 12,
+  },
+  farmNameSaveButtonText: {
+    color: '#FFF7D6',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  currentAvatarCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    padding: 11,
+    borderRadius: 8,
+    backgroundColor: '#F2E0A8',
+    borderWidth: 2,
+    borderColor: '#D5B66E',
+  },
+  currentAvatarIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    borderWidth: 3,
+    borderColor: '#FFF7D6',
+  },
+  currentAvatarEmoji: { fontSize: 31 },
+  currentAvatarStyleEmoji: { position: 'absolute', right: -4, bottom: -3, fontSize: 18 },
+  currentAvatarCopy: { flex: 1 },
+  currentAvatarName: { color: '#2B3F24', fontSize: 14, fontWeight: '900' },
+  currentAvatarDescription: { color: '#6B5A36', fontSize: 10, lineHeight: 14, fontWeight: '700', marginTop: 2 },
+  changeAvatarButton: { backgroundColor: '#42592A', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 9, marginLeft: 8 },
+  changeAvatarButtonText: { color: '#FFF7D6', fontSize: 12, fontWeight: '900' },
+  settingsDivider: { height: 2, backgroundColor: '#D9C99A', marginVertical: 16 },
+  settingsDescription: {
+    color: '#5E6D45',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  sliderValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sliderEdgeLabel: {
+    color: '#5E6D45',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  sliderValue: {
+    color: '#42592A',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  dpadSliderTouchArea: {
+    height: 54,
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  dpadSliderTrack: {
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#DDD0A8',
+    overflow: 'hidden',
+  },
+  dpadSliderFill: {
+    height: '100%',
+    borderRadius: 5,
+    backgroundColor: '#6E873E',
+  },
+  dpadSliderThumb: {
+    position: 'absolute',
+    width: 34,
+    height: 34,
+    marginLeft: -17,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#42592A',
+    borderWidth: 3,
+    borderColor: '#FFF7D6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  logoutButton: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#C88D83',
+    backgroundColor: '#FFF1E8',
+  },
+  logoutButtonPressed: {
+    backgroundColor: '#F6D8CC',
+  },
+  logoutButtonDisabled: {
+    opacity: 0.6,
+  },
+  logoutButtonText: {
+    color: '#8B2F2F',
+    fontSize: 14,
+    fontWeight: '900',
   },
   bagHeader: {
     minHeight: 68,
@@ -1202,6 +2019,27 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   sellButtonText: {
+    color: '#FFF7D6',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  shopSectionSpacing: {
+    marginTop: 20,
+  },
+  buyButton: {
+    minWidth: 82,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2D6840',
+    borderRadius: 5,
+    paddingHorizontal: 9,
+    marginLeft: 8,
+  },
+  unavailableButton: {
+    opacity: 0.45,
+  },
+  buyButtonText: {
     color: '#FFF7D6',
     fontSize: 11,
     fontWeight: '900',

@@ -13,14 +13,25 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
+import { Session } from '@supabase/supabase-js';
 
 import {
   INITIAL_PLANTS,
   INITIAL_SEEDS,
   INITIAL_ENCYCLOPEDIA,
 } from './src/data/mockData';
-import { HarvestedCrop, Plant, Seed, TouristSpot, EncyclopediaItem } from './src/types';
-import { dbService, CURRENT_USER_ID } from './src/services/dbService';
+import {
+  AvatarId,
+  EncyclopediaItem,
+  HarvestedCrop,
+  Plant,
+  PlayerGender,
+  PetId,
+  Seed,
+  TouristSpot,
+  TravelStyle,
+} from './src/types';
+import { dbService } from './src/services/dbService';
 import { fetchNearbyHiddenTouristSpots } from './src/services/tourApi';
 
 import { GardenTab } from './src/components/GardenTab';
@@ -28,6 +39,10 @@ import { ExploreTab } from './src/components/ExploreTab';
 import { EncyclopediaTab } from './src/components/EncyclopediaTab';
 import { HarvestModal } from './src/components/HarvestModal';
 import { CheckInModal } from './src/components/CheckInModal';
+import { AuthGate } from './src/components/AuthGate';
+import { CharacterSurvey } from './src/components/CharacterSurvey';
+import { PetSurvey } from './src/components/PetSurvey';
+import { supabase } from './src/lib/supabase';
 
 type TabType = 'garden' | 'explore' | 'encyclopedia';
 type LocationPoint = { latitude: number; longitude: number };
@@ -36,6 +51,7 @@ type CheckInNotice = { title: string; message: string } | null;
 const CHECK_IN_RADIUS_METERS = 500;
 const CHECK_IN_COOLDOWN_MS = 15 * 60 * 1000;
 const LEGACY_DEFAULT_PLANT_IDS = new Set(['p1', 'p2']);
+const LEGACY_DEFAULT_SEED_IDS = new Set(['s1']);
 
 const getDistanceMeters = (from: LocationPoint, to: LocationPoint) => {
   const earthRadiusMeters = 6371000;
@@ -68,7 +84,8 @@ const formatCooldown = (milliseconds: number) => {
   return `${minutes}분 ${String(seconds).padStart(2, '0')}초`;
 };
 
-export default function App() {
+function GameApp({ session }: { session: Session }) {
+  const userId = session.user.id;
   const [activeTab, setActiveTab] = useState<TabType>('garden');
   const [loading, setLoading] = useState<boolean>(true);
   const [gpsLoading, setGpsLoading] = useState<boolean>(false);
@@ -76,13 +93,23 @@ export default function App() {
   const [currentLocation, setCurrentLocation] = useState<LocationPoint | null>(null);
   const [farmerName, setFarmerName] = useState<string>('나');
   const [nameDraft, setNameDraft] = useState<string>('');
-  const [nameTutorialVisible, setNameTutorialVisible] = useState<boolean>(true);
+  const [nameTutorialVisible, setNameTutorialVisible] = useState<boolean>(false);
 
   // 핵심 애플리케이션 상태 (인터랙티브 순환 구조)
   const [plants, setPlants] = useState<Plant[]>(INITIAL_PLANTS);
   const [seeds, setSeeds] = useState<Seed[]>(INITIAL_SEEDS);
   const [harvestedCrops, setHarvestedCrops] = useState<HarvestedCrop[]>([]);
-  const [money, setMoney] = useState<number>(0);
+  const [money, setMoney] = useState<number>(1000);
+  const [ownedBuildings, setOwnedBuildings] = useState<string[]>([]);
+  const [avatarId, setAvatarId] = useState<AvatarId>('male_nature');
+  const [characterSurveyVisible, setCharacterSurveyVisible] = useState(false);
+  const [editingCharacter, setEditingCharacter] = useState(false);
+  const [petId, setPetId] = useState<PetId>('meerkat');
+  const [dpadScale, setDpadScale] = useState(1);
+  const [menuButtonScale, setMenuButtonScale] = useState(1);
+  const [farmName, setFarmName] = useState('나의 농장');
+  const [petSurveyVisible, setPetSurveyVisible] = useState(false);
+  const [editingPet, setEditingPet] = useState(false);
   const [touristSpots, setTouristSpots] = useState<TouristSpot[]>([]);
   const [encyclopedia, setEncyclopedia] = useState<EncyclopediaItem[]>(INITIAL_ENCYCLOPEDIA);
 
@@ -154,16 +181,44 @@ export default function App() {
   useEffect(() => {
     async function loadData() {
       try {
-        const result = await dbService.loadUserData(CURRENT_USER_ID);
+        const result = await dbService.loadUserData(userId);
         if (result.data) {
           const cleanedPlants = result.data.plants.filter(
             (plant) => !LEGACY_DEFAULT_PLANT_IDS.has(plant.id)
           );
           setPlants(cleanedPlants);
           if (cleanedPlants.length !== result.data.plants.length) {
-            dbService.syncPlants(CURRENT_USER_ID, cleanedPlants);
+            dbService.syncPlants(userId, cleanedPlants);
           }
-          setSeeds(result.data.seeds);
+          const cleanedSeeds = result.data.seeds.filter(
+            (seed) => !LEGACY_DEFAULT_SEED_IDS.has(seed.id)
+          );
+          setSeeds(cleanedSeeds);
+          if (cleanedSeeds.length !== result.data.seeds.length) {
+            dbService.syncSeeds(userId, cleanedSeeds);
+          }
+          setFarmerName(result.data.farmerName);
+          setNameDraft(
+            result.data.farmerName === '로컬 정원사' ? '' : result.data.farmerName
+          );
+          setNameTutorialVisible(result.data.farmerName === '로컬 정원사');
+          setMoney(result.data.money);
+          setHarvestedCrops(result.data.harvestedCrops);
+          setOwnedBuildings(result.data.ownedBuildings);
+          if (result.data.avatarId) {
+            setAvatarId(result.data.avatarId);
+          }
+          const needsCharacter = !result.data.gender || !result.data.travelStyle || !result.data.avatarId;
+          setCharacterSurveyVisible(needsCharacter);
+          setEditingCharacter(false);
+          if (result.data.petId) {
+            setPetId(result.data.petId);
+          }
+          setDpadScale(result.data.dpadScale);
+          setMenuButtonScale(result.data.menuButtonScale);
+          setFarmName(result.data.farmName);
+          setPetSurveyVisible(!needsCharacter && !result.data.petId);
+          setEditingPet(false);
           setEncyclopedia(result.data.encyclopedia);
           await loadGpsTouristSpots(result.data.touristSpots);
         }
@@ -174,7 +229,7 @@ export default function App() {
       }
     }
     loadData();
-  }, []);
+  }, [userId]);
 
   // 1. 물주기 핸들러
   const handleWater = (plantId: string) => {
@@ -194,7 +249,7 @@ export default function App() {
         }
         return p;
       });
-      dbService.syncPlants(CURRENT_USER_ID, nextPlants);
+      dbService.syncPlants(userId, nextPlants);
       return nextPlants;
     });
   };
@@ -217,7 +272,7 @@ export default function App() {
         }
         return p;
       });
-      dbService.syncPlants(CURRENT_USER_ID, nextPlants);
+      dbService.syncPlants(userId, nextPlants);
       return nextPlants;
     });
   };
@@ -234,12 +289,14 @@ export default function App() {
       emoji: plant.emoji,
       harvestedAt: new Date().toISOString(),
     };
-    setHarvestedCrops((prev) => [harvestedCrop, ...prev]);
+    const nextHarvestedCrops = [harvestedCrop, ...harvestedCrops];
+    setHarvestedCrops(nextHarvestedCrops);
+    dbService.updateGameState(userId, { harvestedCrops: nextHarvestedCrops });
 
     // 밭에서 제거 후 클라우드 동기화
     const nextPlants = plants.filter((p) => p.id !== plant.id);
     setPlants(nextPlants);
-    dbService.syncPlants(CURRENT_USER_ID, nextPlants);
+    dbService.syncPlants(userId, nextPlants);
 
     // 도감 수확 카운트 증가 & 동기화
     const nextEnc = encyclopedia.map((item) =>
@@ -248,7 +305,7 @@ export default function App() {
         : item
     );
     setEncyclopedia(nextEnc);
-    dbService.syncEncyclopedia(CURRENT_USER_ID, nextEnc);
+    dbService.syncEncyclopedia(userId, nextEnc);
   };
 
   // 4. 씨앗 심기 핸들러
@@ -256,7 +313,7 @@ export default function App() {
     // 씨앗 보관함에서 제거 & 동기화
     const nextSeeds = seeds.filter((s) => s.id !== seed.id);
     setSeeds(nextSeeds);
-    dbService.syncSeeds(CURRENT_USER_ID, nextSeeds);
+    dbService.syncSeeds(userId, nextSeeds);
 
     // 밭에 새 작물 등록 & 동기화
     const newPlant: Plant = {
@@ -277,7 +334,7 @@ export default function App() {
       nextPlants.unshift(newPlant);
     }
     setPlants(nextPlants);
-    dbService.syncPlants(CURRENT_USER_ID, nextPlants);
+    dbService.syncPlants(userId, nextPlants);
 
     Alert.alert('🌱 파종 완료!', `[${seed.name}]을(를) 내 가든에 심었습니다. 물과 햇빛을 주어 키워보세요!`);
   };
@@ -351,7 +408,7 @@ export default function App() {
       ...prev,
       [spot.id]: Date.now() + CHECK_IN_COOLDOWN_MS,
     }));
-    dbService.checkInSpot(CURRENT_USER_ID, spot.id, spot.title, spot.region);
+    dbService.checkInSpot(userId, spot.id, spot.title, spot.region);
 
     // 씨앗 생성 및 지급 & 동기화
     const newSeed: Seed = {
@@ -363,30 +420,163 @@ export default function App() {
     };
     const nextSeeds = [newSeed, ...seeds];
     setSeeds(nextSeeds);
-    dbService.syncSeeds(CURRENT_USER_ID, nextSeeds);
+    dbService.syncSeeds(userId, nextSeeds);
 
     // 도감 잠금 해제 & 동기화
     const nextEnc = encyclopedia.map((item) =>
       item.region === spot.region ? { ...item, isDiscovered: true } : item
     );
     setEncyclopedia(nextEnc);
-    dbService.syncEncyclopedia(CURRENT_USER_ID, nextEnc);
+    dbService.syncEncyclopedia(userId, nextEnc);
 
     setSelectedSpotForCheckIn(spot);
     setCheckInModalVisible(true);
   };
 
-  const handleCompleteNameTutorial = () => {
+  const handleCompleteNameTutorial = async () => {
     const nextName = nameDraft.trim() || '나';
-    setFarmerName(nextName);
-    setNameTutorialVisible(false);
+    try {
+      await dbService.updateFarmerName(userId, nextName);
+      setFarmerName(nextName);
+      setNameTutorialVisible(false);
+    } catch (error) {
+      console.warn('Farmer name save error:', error);
+      Alert.alert('이름 저장 실패', '인터넷 연결을 확인하고 다시 시도해주세요.');
+    }
+  };
+
+  const handleChangeFarmName = async (nextName: string) => {
+    const normalizedName = nextName.trim();
+    if (!normalizedName) {
+      throw new Error('농장 이름을 입력해주세요.');
+    }
+    await dbService.updateControlSettings(userId, {
+      dpadScale,
+      menuButtonScale,
+      farmName: normalizedName,
+    });
+    setFarmName(normalizedName);
+  };
+
+  const handleControlSettingsChange = async (settings: {
+    dpadScale: number;
+    menuButtonScale: number;
+    farmName: string;
+  }) => {
+    setDpadScale(settings.dpadScale);
+    setMenuButtonScale(settings.menuButtonScale);
+    await dbService.updateControlSettings(userId, settings);
   };
 
   const handleSellHarvestedCrop = (crop: HarvestedCrop) => {
-    setHarvestedCrops((prev) => prev.filter((item) => item.id !== crop.id));
-    setMoney((prev) => prev + 120);
+    const nextCrops = harvestedCrops.filter((item) => item.id !== crop.id);
+    const nextMoney = money + 120;
+    setHarvestedCrops(nextCrops);
+    setMoney(nextMoney);
+    dbService.updateGameState(userId, {
+      money: nextMoney,
+      harvestedCrops: nextCrops,
+    });
     Alert.alert('판매 완료', `${crop.name}을(를) 판매해 120G를 벌었습니다.`);
   };
+
+  const handleBuySeed = (seed: Seed, price: number) => {
+    if (money < price) {
+      Alert.alert('골드가 부족해요', `${price - money}G가 더 필요합니다.`);
+      return;
+    }
+    const purchasedSeed = { ...seed, id: `${seed.id}_${Date.now()}` };
+    const nextSeeds = [purchasedSeed, ...seeds];
+    const nextMoney = money - price;
+    setSeeds(nextSeeds);
+    setMoney(nextMoney);
+    dbService.syncSeeds(userId, nextSeeds);
+    dbService.updateGameState(userId, { money: nextMoney });
+    Alert.alert('구매 완료', `${seed.name}을(를) 가방에 넣었습니다.`);
+  };
+
+  const handleBuyBuilding = (buildingId: string, buildingName: string, price: number) => {
+    if (ownedBuildings.includes(buildingId)) {
+      Alert.alert('이미 보유 중이에요', `${buildingName}은(는) 이미 구매했습니다.`);
+      return;
+    }
+    if (money < price) {
+      Alert.alert('골드가 부족해요', `${price - money}G가 더 필요합니다.`);
+      return;
+    }
+    const nextBuildings = [...ownedBuildings, buildingId];
+    const nextMoney = money - price;
+    setOwnedBuildings(nextBuildings);
+    setMoney(nextMoney);
+    dbService.updateGameState(userId, {
+      money: nextMoney,
+      ownedBuildings: nextBuildings,
+    });
+    Alert.alert('건물 구매 완료', `${buildingName}을(를) 보관함에 추가했습니다.`);
+  };
+
+  const handleCompleteCharacterSurvey = async (
+    gender: PlayerGender,
+    travelStyle: TravelStyle,
+    nextAvatarId: AvatarId
+  ) => {
+    await dbService.updatePlayerProfile(userId, gender, travelStyle, nextAvatarId);
+    setAvatarId(nextAvatarId);
+    setCharacterSurveyVisible(false);
+    setEditingCharacter(false);
+    if (!editingCharacter) {
+      setPetSurveyVisible(true);
+    }
+  };
+
+  const handleCompletePetSurvey = async (nextPetId: PetId) => {
+    await dbService.updatePet(userId, nextPetId);
+    setPetId(nextPetId);
+    setPetSurveyVisible(false);
+    setEditingPet(false);
+  };
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.gameLoadingScreen}>
+        <Text style={styles.gameLoadingEmoji}>🌱</Text>
+        <Text style={styles.gameLoadingText}>농장을 준비하고 있어요</Text>
+      </View>
+    );
+  }
+
+  if (characterSurveyVisible) {
+    return (
+      <CharacterSurvey
+        onComplete={handleCompleteCharacterSurvey}
+        initialAvatarId={editingCharacter ? avatarId : undefined}
+        mode={editingCharacter ? 'edit' : 'create'}
+        onCancel={editingCharacter ? () => {
+          setCharacterSurveyVisible(false);
+          setEditingCharacter(false);
+        } : undefined}
+      />
+    );
+  }
+
+  if (petSurveyVisible) {
+    return (
+      <PetSurvey
+        onComplete={handleCompletePetSurvey}
+        initialPetId={editingPet ? petId : undefined}
+        mode={editingPet ? 'edit' : 'create'}
+        onCancel={editingPet ? () => {
+          setPetSurveyVisible(false);
+          setEditingPet(false);
+        } : undefined}
+      />
+    );
+  }
 
   return (
     <View style={styles.rootWrapper}>
@@ -410,7 +600,13 @@ export default function App() {
               seeds={seeds}
               harvestedCrops={harvestedCrops}
               farmerName={farmerName}
+              farmName={farmName}
               money={money}
+              ownedBuildings={ownedBuildings}
+              avatarId={avatarId}
+              petId={petId}
+              dpadScale={dpadScale}
+              menuButtonScale={menuButtonScale}
               onWater={handleWater}
               onSun={handleSun}
               onHarvest={handleHarvest}
@@ -418,6 +614,21 @@ export default function App() {
               onGoExplore={() => setActiveTab('explore')}
               onGoEncyclopedia={() => setActiveTab('encyclopedia')}
               onSellHarvestedCrop={handleSellHarvestedCrop}
+              onBuySeed={handleBuySeed}
+              onBuyBuilding={handleBuyBuilding}
+              onChangeCharacter={() => {
+                setEditingCharacter(true);
+                setCharacterSurveyVisible(true);
+              }}
+              onChangePet={() => {
+                setEditingPet(true);
+                setPetSurveyVisible(true);
+              }}
+              onChangeFarmName={handleChangeFarmName}
+              onControlSettingsChange={(settings) =>
+                handleControlSettingsChange({ ...settings, farmName })
+              }
+              onLogout={handleLogout}
             />
           )}
 
@@ -432,7 +643,7 @@ export default function App() {
           )}
 
           {activeTab === 'encyclopedia' && (
-            <EncyclopediaTab encyclopedia={encyclopedia} />
+            <EncyclopediaTab encyclopedia={encyclopedia} avatarId={avatarId} petId={petId} />
           )}
         </View>
 
@@ -504,6 +715,10 @@ export default function App() {
       </SafeAreaView>
     </View>
   );
+}
+
+export default function App() {
+  return <AuthGate>{(session) => <GameApp session={session} />}</AuthGate>;
 }
 
 const styles = StyleSheet.create({
@@ -725,5 +940,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     color: '#FFFFFF',
+  },
+  gameLoadingScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F6F0D7',
+    gap: 12,
+  },
+  gameLoadingEmoji: {
+    fontSize: 48,
+  },
+  gameLoadingText: {
+    color: '#2D6A4F',
+    fontSize: 15,
+    fontWeight: '900',
   },
 });
