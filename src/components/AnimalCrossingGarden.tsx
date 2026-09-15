@@ -541,6 +541,38 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
         style={[styles.mapCanvas, { minHeight: mapMinHeight }]}
         onLayout={handleMapLayout}
       >
+        {/* === 상단 및 측면 울창한 숲 캐노피 (Dense Forest Wall & Borders) === */}
+        <View style={styles.topForestCanopy} pointerEvents="none">
+          <View style={[styles.treeCrown, { backgroundColor: '#21421A', width: 70, height: 70, left: -10, top: -15 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#2D5924', width: 85, height: 85, left: 35, top: -25 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#386D2D', width: 75, height: 75, left: 100, top: -20 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#264D1F', width: 90, height: 90, left: 155, top: -30 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#336329', width: 80, height: 80, left: 225, top: -22 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#2A5422', width: 85, height: 85, left: 290, top: -26 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#3B7330', width: 78, height: 78, left: 355, top: -20 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#22451C', width: 85, height: 85, left: 415, top: -25 }]} />
+        </View>
+
+        {/* 좌/우 측면 숲 라인 (Side Dense Forest Borders) */}
+        <View style={styles.leftTreeBorder} pointerEvents="none">
+          <View style={[styles.treeCrown, { backgroundColor: '#2B5723', width: 68, height: 68, top: 0, left: -25 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#3A702F', width: 74, height: 74, top: 50, left: -30 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#244B1D', width: 70, height: 70, top: 110, left: -26 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#326328', width: 76, height: 76, top: 170, left: -30 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#275020', width: 72, height: 72, top: 230, left: -25 }]} />
+        </View>
+
+        <View style={styles.rightTreeBorder} pointerEvents="none">
+          <View style={[styles.treeCrown, { backgroundColor: '#2A5522', width: 68, height: 68, top: 0, right: -25 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#3B7330', width: 74, height: 74, top: 50, right: -30 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#23481C', width: 70, height: 70, top: 110, right: -26 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#316127', width: 76, height: 76, top: 170, right: -30 }]} />
+          <View style={[styles.treeCrown, { backgroundColor: '#264E1F', width: 72, height: 72, top: 230, right: -25 }]} />
+        </View>
+
+        {/* === 상단 건물 마당 흙바닥 (Upper Dirt Courtyard) === */}
+        <View style={styles.dirtCourtyard} pointerEvents="none" />
+
         {/* === 스타듀밸리 조약돌/흙길 산책로 (Cobblestone Paths) === */}
         <View style={styles.horizontalPath} pointerEvents="none">
           <View style={styles.pathBorderTop} />
@@ -566,7 +598,45 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           </View>
         </View>
 
-        {/* === 스타듀밸리 농가 오두막 (Farmhouse Cabin) === */}
+        {/* === 목책 울타리 라인 (Rustic Farm Fences) === */}
+        <View style={styles.fenceSectionLeft} pointerEvents="none">
+          <View style={styles.fencePost} />
+          <View style={styles.fenceRails} />
+          <View style={styles.fencePost} />
+          <View style={styles.fenceRails} />
+          <View style={styles.fencePost} />
+        </View>
+        <View style={styles.fenceSectionRight} pointerEvents="none">
+          <View style={styles.fencePost} />
+          <View style={styles.fenceRails} />
+          <View style={styles.fencePost} />
+          <View style={styles.fenceRails} />
+          <View style={styles.fencePost} />
+        </View>
+
+        {/* === 좌측: 빨간 목재 헛간 / 축사 (Wood Barn) === */}
+        <View style={styles.barnContainer} pointerEvents="none">
+          <View style={styles.barnRoof}>
+            <View style={styles.barnRoofRidge} />
+          </View>
+          <View style={styles.barnBody}>
+            {/* 건초 다락 창문 */}
+            <View style={styles.hayLoftWindow}>
+              <View style={styles.hayStraw} />
+            </View>
+            {/* 헛간 미닫이문 */}
+            <View style={styles.barnDoor}>
+              <View style={styles.barnDoorPlank} />
+            </View>
+          </View>
+          <View style={styles.barnBase} />
+          <View style={styles.barnSideProps}>
+            <Text style={{ fontSize: 13 }}>🪵</Text>
+            <Text style={{ fontSize: 13 }}>📦</Text>
+          </View>
+        </View>
+
+        {/* === 중앙: 스타듀밸리 농가 오두막 (Main Farmhouse Cabin) === */}
         <View style={styles.farmHouseContainer} pointerEvents="none">
           {/* 굴뚝 & 모락모락 연기 */}
           <View style={styles.chimney}>
@@ -623,6 +693,30 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           </View>
           <View style={styles.woodPile}>
             <Text style={{ fontSize: 15 }}>🪵</Text>
+          </View>
+        </View>
+
+        {/* === 우측: 유리 온실 & 가공 창고 (Stone Greenhouse & Workshop) === */}
+        <View style={styles.greenhouseContainer} pointerEvents="none">
+          <View style={styles.greenhouseRoof}>
+            <View style={styles.glassPaneRow}>
+              <View style={styles.glassPane} />
+              <View style={styles.glassPane} />
+              <View style={styles.glassPane} />
+            </View>
+          </View>
+          <View style={styles.greenhouseBody}>
+            <View style={styles.greenhouseWindow}>
+              <View style={styles.greenhousePlantEmoji}>
+                <Text style={{ fontSize: 11 }}>🌿</Text>
+              </View>
+            </View>
+            <View style={styles.greenhouseDoor} />
+          </View>
+          <View style={styles.greenhouseBase} />
+          <View style={styles.greenhouseSideProps}>
+            <Text style={{ fontSize: 13 }}>🪴</Text>
+            <Text style={{ fontSize: 13 }}>🧰</Text>
           </View>
         </View>
 
@@ -1210,23 +1304,191 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(235,206,146,0.5)',
   },
 
-  /* === 스타듀밸리 농가 오두막 (Farmhouse Cabin) === */
+  /* === 상단 및 측면 숲 캐노피 & 마당 (Forest Canopy & Courtyard) === */
+  topForestCanopy: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -10,
+    height: 65,
+    zIndex: 1,
+    overflow: 'hidden',
+  },
+  treeCrown: {
+    position: 'absolute',
+    borderRadius: 45,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+  },
+  leftTreeBorder: {
+    position: 'absolute',
+    left: 0,
+    top: 130,
+    width: 25,
+    bottom: 50,
+    zIndex: 3,
+    overflow: 'hidden',
+  },
+  rightTreeBorder: {
+    position: 'absolute',
+    right: 0,
+    top: 130,
+    width: 25,
+    bottom: 50,
+    zIndex: 3,
+    overflow: 'hidden',
+  },
+  dirtCourtyard: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    top: 25,
+    height: 135,
+    backgroundColor: '#D1A358',
+    borderRadius: 14,
+    opacity: 0.5,
+    zIndex: 2,
+  },
+
+  /* === 목책 울타리 라인 (Rustic Farm Fences) === */
+  fenceSectionLeft: {
+    position: 'absolute',
+    left: 12,
+    top: 160,
+    width: '32%',
+    height: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 4,
+  },
+  fenceSectionRight: {
+    position: 'absolute',
+    right: 12,
+    top: 160,
+    width: '32%',
+    height: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    zIndex: 4,
+  },
+  fencePost: {
+    width: 7,
+    height: 16,
+    backgroundColor: '#6A411B',
+    borderRadius: 2,
+    borderWidth: 1,
+    borderColor: '#3D220C',
+  },
+  fenceRails: {
+    flex: 1,
+    height: 4,
+    backgroundColor: '#8B5625',
+    marginHorizontal: 1,
+    borderRadius: 1,
+  },
+
+  /* === 좌측: 목재 헛간 / 축사 (Wood Barn) === */
+  barnContainer: {
+    position: 'absolute',
+    left: 10,
+    top: 24,
+    width: 96,
+    height: 120,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  barnRoof: {
+    width: 94,
+    height: 40,
+    backgroundColor: '#8C3222',
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+    borderWidth: 2,
+    borderColor: '#4A160D',
+    alignItems: 'center',
+  },
+  barnRoofRidge: {
+    width: 80,
+    height: 4,
+    backgroundColor: '#B54734',
+    marginTop: 6,
+    borderRadius: 2,
+  },
+  barnBody: {
+    width: 86,
+    height: 60,
+    backgroundColor: '#BA4E38',
+    borderWidth: 2,
+    borderColor: '#541F14',
+    borderTopWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  hayLoftWindow: {
+    width: 24,
+    height: 16,
+    backgroundColor: '#541F14',
+    borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  hayStraw: {
+    width: 18,
+    height: 10,
+    backgroundColor: '#FACC15',
+    borderRadius: 2,
+  },
+  barnDoor: {
+    width: 44,
+    height: 32,
+    backgroundColor: '#5A2A14',
+    borderWidth: 2,
+    borderColor: '#321406',
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  barnDoorPlank: {
+    width: 2,
+    height: '100%',
+    backgroundColor: '#321406',
+  },
+  barnBase: {
+    width: 92,
+    height: 6,
+    backgroundColor: '#485058',
+    borderRadius: 2,
+  },
+  barnSideProps: {
+    position: 'absolute',
+    left: -2,
+    bottom: 0,
+    flexDirection: 'row',
+    gap: 2,
+  },
+
+  /* === 중앙: 스타듀밸리 농가 오두막 (Farmhouse Cabin) === */
   farmHouseContainer: {
     position: 'absolute',
     left: '50%',
-    marginLeft: -105,
+    marginLeft: -85,
     top: '3%',
-    width: 210,
-    height: 155,
+    width: 170,
+    height: 140,
     alignItems: 'center',
     zIndex: 10,
   },
   chimney: {
     position: 'absolute',
-    right: 24,
+    right: 18,
     top: 2,
-    width: 20,
-    height: 32,
+    width: 18,
+    height: 30,
     backgroundColor: '#8C3826',
     borderWidth: 2,
     borderColor: '#4A1C12',
@@ -1251,8 +1513,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.45)',
   },
   houseRoof: {
-    width: 200,
-    height: 64,
+    width: 164,
+    height: 54,
     backgroundColor: '#B53E2B',
     borderWidth: 3,
     borderColor: '#541B12',
@@ -1275,7 +1537,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   roofTile: {
-    width: 28,
+    width: 24,
     height: 4,
     backgroundColor: '#8C2E1F',
     borderRadius: 2,
@@ -1296,16 +1558,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFE57F',
   },
   roofEaves: {
-    width: 208,
-    height: 7,
+    width: 172,
+    height: 6,
     backgroundColor: '#6D2B1E',
     borderBottomLeftRadius: 3,
     borderBottomRightRadius: 3,
     zIndex: 13,
   },
   houseBody: {
-    width: 184,
-    height: 58,
+    width: 154,
+    height: 52,
     backgroundColor: '#E5A55B',
     borderWidth: 3,
     borderColor: '#6C3A16',
@@ -1317,53 +1579,53 @@ const styles = StyleSheet.create({
     zIndex: 11,
   },
   houseWindow: {
-    width: 32,
-    height: 28,
+    width: 28,
+    height: 26,
     backgroundColor: '#6C3A16',
     borderRadius: 3,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   windowShutterLeft: {
-    width: 4,
+    width: 3,
     height: '90%',
     backgroundColor: '#8B4513',
     marginRight: 1,
   },
   windowGlass: {
-    width: 20,
+    width: 18,
     height: '90%',
     backgroundColor: '#FEF08A',
     borderRadius: 2,
   },
   windowShutterRight: {
-    width: 4,
+    width: 3,
     height: '90%',
     backgroundColor: '#8B4513',
     marginLeft: 1,
   },
   houseDoor: {
-    width: 32,
-    height: 48,
+    width: 28,
+    height: 44,
     backgroundColor: '#7A3F1B',
     borderWidth: 2,
     borderColor: '#4A230D',
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   doorKnocker: {
-    width: 6,
-    height: 6,
+    width: 5,
+    height: 5,
     borderRadius: 3,
     backgroundColor: '#FDE047',
   },
   housePorch: {
-    width: 196,
-    height: 18,
+    width: 164,
+    height: 16,
     backgroundColor: '#B46B2C',
     borderWidth: 2,
     borderColor: '#542E10',
@@ -1371,13 +1633,13 @@ const styles = StyleSheet.create({
     zIndex: 12,
   },
   porchStep1: {
-    width: 60,
+    width: 54,
     height: 5,
     backgroundColor: '#985820',
   },
   porchStep2: {
-    width: 72,
-    height: 6,
+    width: 64,
+    height: 5,
     backgroundColor: '#7A4315',
     marginTop: 2,
   },
@@ -1392,6 +1654,85 @@ const styles = StyleSheet.create({
     left: 2,
     bottom: -4,
     zIndex: 15,
+  },
+
+  /* === 우측: 유리 온실 & 가공 창고 (Stone Greenhouse & Workshop) === */
+  greenhouseContainer: {
+    position: 'absolute',
+    right: 10,
+    top: 24,
+    width: 96,
+    height: 120,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  greenhouseRoof: {
+    width: 94,
+    height: 40,
+    backgroundColor: '#334155',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderWidth: 2,
+    borderColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  glassPaneRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  glassPane: {
+    width: 22,
+    height: 22,
+    backgroundColor: '#7DD3FC',
+    borderRadius: 3,
+    opacity: 0.8,
+  },
+  greenhouseBody: {
+    width: 86,
+    height: 60,
+    backgroundColor: '#475569',
+    borderWidth: 2,
+    borderColor: '#1E293B',
+    borderTopWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingHorizontal: 4,
+  },
+  greenhouseWindow: {
+    width: 32,
+    height: 40,
+    backgroundColor: '#0284C7',
+    borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  greenhousePlantEmoji: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  greenhouseDoor: {
+    width: 28,
+    height: 46,
+    backgroundColor: '#334155',
+    borderWidth: 2,
+    borderColor: '#0F172A',
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+  },
+  greenhouseBase: {
+    width: 92,
+    height: 6,
+    backgroundColor: '#374151',
+    borderRadius: 2,
+  },
+  greenhouseSideProps: {
+    position: 'absolute',
+    right: -2,
+    bottom: 0,
+    flexDirection: 'row',
+    gap: 2,
   },
 
 
