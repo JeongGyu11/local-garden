@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   GestureResponderEvent,
-  LayoutChangeEvent,
   Modal,
   Platform,
   Pressable,
@@ -14,12 +13,14 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AvatarId, HarvestedCrop, PetId, Plant, Seed } from '../types';
 import { getAvatarDefinition } from '../data/avatarData';
 import { getPetDefinition } from '../data/petData';
 import { PetCharacter } from './PetCharacter';
 import { PlayerCharacter } from './PlayerCharacter';
+import { SeedVisual } from './SeedVisual';
 
 interface AnimalCrossingGardenProps {
   plants: Plant[];
@@ -33,6 +34,8 @@ interface AnimalCrossingGardenProps {
   petId: PetId;
   initialDpadScale: number;
   initialMenuButtonScale: number;
+  waterCooldownReductionMs: number;
+  sunCooldownReductionMs: number;
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
@@ -41,13 +44,15 @@ interface AnimalCrossingGardenProps {
   onGoEncyclopedia: () => void;
   onSellHarvestedCrop: (crop: HarvestedCrop) => void;
   onBuySeed: (seed: Seed, price: number) => void;
-  onBuyBuilding: (buildingId: string, buildingName: string, price: number) => void;
+  onBuyCareCooldownUpgrade: (type: 'water' | 'sun') => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
   onChangeFarmName: (farmName: string) => Promise<void>;
   onControlSettingsChange: (settings: {
     dpadScale: number;
     menuButtonScale: number;
+    waterCooldownReductionMs: number;
+    sunCooldownReductionMs: number;
   }) => Promise<void>;
   onLogout: () => Promise<void>;
 }
@@ -71,33 +76,78 @@ const PLOTS: Plot[] = [
 
 const SHOP = { x: 82, y: 31, emoji: '🏪', label: '상점' };
 const SHOP_SEEDS: Array<{ seed: Seed; price: number }> = [
-  { seed: { id: 'shop_carrot', name: '당근 씨앗', region: '전국', emoji: '🥕', description: '상점에서 구매한 튼튼한 당근 씨앗' }, price: 150 },
-  { seed: { id: 'shop_tomato', name: '토마토 씨앗', region: '전국', emoji: '🍅', description: '상점에서 구매한 새콤달콤 토마토 씨앗' }, price: 200 },
-  { seed: { id: 'shop_corn', name: '옥수수 씨앗', region: '강원', emoji: '🌽', description: '상점에서 구매한 고소한 옥수수 씨앗' }, price: 250 },
-];
-const SHOP_BUILDINGS = [
-  { id: 'storage_shed', name: '씨앗 창고', emoji: '🏚️', description: '씨앗을 보관하는 아담한 창고', price: 600 },
-  { id: 'greenhouse', name: '작은 온실', emoji: '🏡', description: '작물을 따뜻하게 키우는 유리 온실', price: 900 },
+  {
+    seed: {
+      id: 'shop_local',
+      name: '로컬 씨앗',
+      region: '전국',
+      emoji: '🌾',
+      description: '향토의 정기가 깃든 튼튼하고 신선한 기본 로컬 씨앗',
+      visual: {
+        theme: 'local',
+        primaryColor: '#6E9F44',
+        secondaryColor: '#F2D36B',
+        accentColor: '#FFF8D9',
+        pattern: 'leaf',
+      },
+    },
+    price: 200,
+  },
+  {
+    seed: {
+      id: 'shop_garden',
+      name: '가든 씨앗',
+      region: '전국',
+      emoji: '🌻',
+      description: '정원을 화사하고 풍성하게 가꿔주는 기본 가든 씨앗',
+      visual: {
+        theme: 'festival',
+        primaryColor: '#D946EF',
+        secondaryColor: '#38BDF8',
+        accentColor: '#FDE047',
+        pattern: 'sparkle',
+      },
+    },
+    price: 200,
+  },
 ];
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const distance = (a: MapPoint, b: MapPoint) => Math.hypot(a.x - b.x, a.y - b.y);
-type MovingTarget = { type: 'plot'; id: number } | { type: 'shop' } | null;
-type DraggableTarget = NonNullable<MovingTarget>;
-type DragStart = {
-  target: DraggableTarget;
-  pageX: number;
-  pageY: number;
-  position: MapPoint;
-} | null;
 const MIN_DPAD_SCALE = 0.7;
 const MAX_DPAD_SCALE = 1.4;
 const MIN_MENU_BUTTON_SCALE = 0.7;
 const MAX_MENU_BUTTON_SCALE = 1.4;
+const CHANGE_SERVICE_PRICE = 500;
+const CARE_UPGRADE_PRICE = 200;
+const CARE_BASE_COOLDOWN_MS = 20 * 60 * 1000;
+const CARE_UPGRADE_REDUCTION_MS = 10 * 1000;
+const FARM_BGM = require('../../assets/audio/farm-bgm.mp3');
+const UI_TAP_SFX = require('../../assets/audio/ui-tap.mp3');
 
 const createPlotLabelFromSeed = (seed: Seed) => {
   const seedBase = seed.name.replace(/\s*씨앗$/, '').trim();
   return `${seedBase || '특산'} 밭`;
+};
+
+const formatCooldownTime = (milliseconds: number) => {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}분 ${String(seconds).padStart(2, '0')}초`;
+};
+
+const getPlantPlotIndex = (plant: Plant, fallbackIndex: number) => {
+  if (typeof plant.plotIndex === 'number') {
+    return plant.plotIndex;
+  }
+
+  const match = plant.id.match(/^p_plot_(\d+)_/);
+  if (match) {
+    return Number(match[1]);
+  }
+
+  return fallbackIndex;
 };
 
 export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
@@ -112,6 +162,8 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   petId,
   initialDpadScale,
   initialMenuButtonScale,
+  waterCooldownReductionMs,
+  sunCooldownReductionMs,
   onWater,
   onSun,
   onHarvest,
@@ -120,7 +172,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   onGoEncyclopedia,
   onSellHarvestedCrop,
   onBuySeed,
-  onBuyBuilding,
+  onBuyCareCooldownUpgrade,
   onChangeCharacter,
   onChangePet,
   onChangeFarmName,
@@ -128,6 +180,9 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   onLogout,
 }) => {
   const { height } = useWindowDimensions();
+  const bgmPlayer = useAudioPlayer(FARM_BGM);
+  const tapPlayer = useAudioPlayer(UI_TAP_SFX);
+  const audioMountedRef = useRef(true);
   const [charPos, setCharPos] = useState<MapPoint>({ x: 50, y: 78 });
   const [petPos, setPetPos] = useState<MapPoint>({ x: 45.5, y: 80 });
   const previousCharPosRef = useRef<MapPoint>({ x: 50, y: 78 });
@@ -135,6 +190,8 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const [isWalking, setIsWalking] = useState(false);
   const [bagVisible, setBagVisible] = useState(false);
   const [shopVisible, setShopVisible] = useState(false);
+  const [cabinInteriorVisible, setCabinInteriorVisible] = useState(false);
+  const [interiorEffect, setInteriorEffect] = useState<string | null>(null);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [dpadScale, setDpadScale] = useState(initialDpadScale);
@@ -145,32 +202,27 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const menuButtonScaleRef = useRef(initialMenuButtonScale);
   const [farmNameDraft, setFarmNameDraft] = useState(farmName);
   const [savingFarmName, setSavingFarmName] = useState(false);
-  const [movingTarget, setMovingTarget] = useState<MovingTarget>(null);
-  const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
-  const [plotPositions, setPlotPositions] = useState<Record<number, MapPoint>>(
-    () =>
-      PLOTS.reduce<Record<number, MapPoint>>((acc, plot) => {
-        acc[plot.id] = { x: plot.x, y: plot.y };
-        return acc;
-      }, {})
-  );
   const [plotLabels, setPlotLabels] = useState<Record<number, string>>({});
-  const [shopPosition, setShopPosition] = useState<MapPoint>({
-    x: SHOP.x,
-    y: SHOP.y,
-  });
-  const dragStartRef = useRef<DragStart>(null);
   const [floatingEffect, setFloatingEffect] = useState<{ text: string; x: number; y: number } | null>(null);
 
   const mapMinHeight = Math.max(540, height - 150);
-  const placedPlots = PLOTS.map((plot) => ({
-    ...plot,
-    ...(plotPositions[plot.id] ?? { x: plot.x, y: plot.y }),
-  }));
+  const placedPlots = PLOTS;
   const nearbyPlotIndex = placedPlots.findIndex((plot) => distance(plot, charPos) < 11);
   const nearbyPlot = nearbyPlotIndex >= 0 ? placedPlots[nearbyPlotIndex] : null;
-  const currentPlantInPlot = nearbyPlotIndex >= 0 ? plants[nearbyPlotIndex] : null;
-  const isNearShop = distance(shopPosition, charPos) < 10;
+  const currentPlantInPlot =
+    nearbyPlotIndex >= 0
+      ? plants.find((plant, index) => getPlantPlotIndex(plant, index) === nearbyPlotIndex) ??
+        null
+      : null;
+  const isNearShop = distance(SHOP, charPos) < 10;
+  const isNearLibrary =
+    (charPos.x <= 34 && charPos.y <= 38) ||
+    distance({ x: 20, y: 26 }, charPos) < 16;
+  const isNearCabin =
+    charPos.x > 34 && charPos.x < 64 && charPos.y <= 38;
+  const isNearWarehouse =
+    (charPos.x >= 64 && charPos.y <= 38) ||
+    distance({ x: 74, y: 26 }, charPos) < 16;
   const dpadButtonSize = Math.round(39 * dpadScale);
   const dpadCenterSize = Math.round(38 * dpadScale);
   const dpadIconSize = Math.round(20 * dpadScale);
@@ -202,6 +254,73 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   }[avatarTravelStyle];
   const avatarDefinition = getAvatarDefinition(avatarId);
   const petDefinition = getPetDefinition(petId);
+  const waterCooldownMs = Math.max(0, CARE_BASE_COOLDOWN_MS - waterCooldownReductionMs);
+  const sunCooldownMs = Math.max(0, CARE_BASE_COOLDOWN_MS - sunCooldownReductionMs);
+
+  useEffect(() => {
+    audioMountedRef.current = true;
+    return () => {
+      audioMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const playBackgroundMusic = async () => {
+      try {
+        await setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
+          interruptionMode: 'duckOthers',
+          shouldPlayInBackground: false,
+        });
+
+        if (!mounted) {
+          return;
+        }
+
+        bgmPlayer.loop = true;
+        bgmPlayer.volume = 0.28;
+        bgmPlayer.play();
+      } catch (error) {
+        console.warn('Farm background music error:', error);
+      }
+    };
+
+    playBackgroundMusic();
+
+    return () => {
+      mounted = false;
+    };
+  }, [bgmPlayer]);
+
+  const playTapSound = () => {
+    if (!audioMountedRef.current) {
+      return;
+    }
+
+    try {
+      tapPlayer.volume = 0.5;
+      void tapPlayer
+        .seekTo(0)
+        .then(() => {
+          if (!audioMountedRef.current) {
+            return;
+          }
+          try {
+            tapPlayer.play();
+          } catch (error) {
+            console.warn('UI tap sound play error:', error);
+          }
+        })
+        .catch((error) => {
+          console.warn('UI tap sound seek error:', error);
+        });
+    } catch (error) {
+      console.warn('UI tap sound error:', error);
+    }
+  };
 
   useEffect(() => {
     const followTarget = previousCharPosRef.current;
@@ -250,6 +369,8 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
       await onControlSettingsChange({
         dpadScale: dpadScaleRef.current,
         menuButtonScale: menuButtonScaleRef.current,
+        waterCooldownReductionMs,
+        sunCooldownReductionMs,
       });
     } catch (error) {
       console.warn('Control settings save error:', error);
@@ -262,6 +383,10 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
     const nextName = farmNameDraft.trim();
     if (!nextName) {
       Alert.alert('농장 이름', '농장 이름을 입력해주세요.');
+      return;
+    }
+    if (nextName !== farmName && money < CHANGE_SERVICE_PRICE) {
+      Alert.alert('골드가 부족해요', `농장 이름 변경에는 ${CHANGE_SERVICE_PRICE}G가 필요합니다.`);
       return;
     }
     setSavingFarmName(true);
@@ -289,6 +414,24 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
     }
   };
 
+  const handlePaidCharacterChange = () => {
+    if (money < CHANGE_SERVICE_PRICE) {
+      Alert.alert('골드가 부족해요', `캐릭터 변경에는 ${CHANGE_SERVICE_PRICE}G가 필요합니다.`);
+      return;
+    }
+    setShopVisible(false);
+    onChangeCharacter();
+  };
+
+  const handlePaidPetChange = () => {
+    if (money < CHANGE_SERVICE_PRICE) {
+      Alert.alert('골드가 부족해요', `동행 친구 변경에는 ${CHANGE_SERVICE_PRICE}G가 필요합니다.`);
+      return;
+    }
+    setShopVisible(false);
+    onChangePet();
+  };
+
   const moveCharacter = (dx: number, dy: number, dir: 'down' | 'up' | 'left' | 'right') => {
     setDirection(dir);
     setIsWalking(true);
@@ -298,68 +441,6 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
       x: clamp(prev.x + dx, 12, 88),
       y: clamp(prev.y + dy, 17, 86),
     }));
-  };
-
-  const handleMapLayout = (event: LayoutChangeEvent) => {
-    const { width, height: nextHeight } = event.nativeEvent.layout;
-    setMapSize({ width, height: nextHeight });
-  };
-
-  const getPositionFromDrag = (event: GestureResponderEvent, dragStart: DragStart) => {
-    if (!dragStart || mapSize.width <= 0 || mapSize.height <= 0) {
-      return null;
-    }
-
-    const deltaX = ((event.nativeEvent.pageX - dragStart.pageX) / mapSize.width) * 100;
-    const deltaY = ((event.nativeEvent.pageY - dragStart.pageY) / mapSize.height) * 100;
-    return {
-      x: clamp(dragStart.position.x + deltaX, 10, 90),
-      y: clamp(dragStart.position.y + deltaY, 13, 88),
-    };
-  };
-
-  const startDraggingTarget = (
-    event: GestureResponderEvent,
-    target: DraggableTarget,
-    position: MapPoint,
-    label: string
-  ) => {
-    event.stopPropagation();
-    dragStartRef.current = {
-      target,
-      pageX: event.nativeEvent.pageX,
-      pageY: event.nativeEvent.pageY,
-      position,
-    };
-    setMovingTarget(target);
-    triggerEffect(`${label} 이동 중`, position.x, position.y - 7);
-  };
-
-  const finishDraggingTarget = (event: GestureResponderEvent) => {
-    const dragStart = dragStartRef.current;
-    if (!dragStart) {
-      return;
-    }
-
-    event.stopPropagation();
-    const nextPosition = getPositionFromDrag(event, dragStart);
-    dragStartRef.current = null;
-    setMovingTarget(null);
-    if (!nextPosition) {
-      return;
-    }
-
-    const target = dragStart.target;
-    if (target.type === 'shop') {
-      setShopPosition(nextPosition);
-      triggerEffect('상점 이동 완료', nextPosition.x, nextPosition.y - 7);
-    } else {
-      setPlotPositions((prev) => ({
-        ...prev,
-        [target.id]: nextPosition,
-      }));
-      triggerEffect('밭 이동 완료', nextPosition.x, nextPosition.y - 7);
-    }
   };
 
   useEffect(() => {
@@ -394,12 +475,23 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
     setTimeout(() => setFloatingEffect(null), 1050);
   };
 
+  const triggerInteriorEffect = (text: string) => {
+    setInteriorEffect(text);
+    setTimeout(() => setInteriorEffect(null), 2500);
+  };
+
   const handleControlPress = (event: GestureResponderEvent, action: () => void) => {
     event.stopPropagation();
+    playTapSound();
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       document.body.focus();
     }
     action();
+  };
+
+  const handlePlainPress = (action: () => void | Promise<void>) => {
+    playTapSound();
+    void action();
   };
 
   const handlePlantSeed = () => {
@@ -447,7 +539,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             onPress={(event) =>
               handleControlPress(event, () => {
                 onWater(currentPlantInPlot.id);
-                triggerEffect('수분 +25%', charPos.x, charPos.y - 7);
+                triggerEffect('수분 +50%', charPos.x, charPos.y - 7);
               })
             }
           >
@@ -459,7 +551,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             onPress={(event) =>
               handleControlPress(event, () => {
                 onSun(currentPlantInPlot.id);
-                triggerEffect('햇빛 +25%', charPos.x, charPos.y - 7);
+                triggerEffect('햇빛 +50%', charPos.x, charPos.y - 7);
               })
             }
           >
@@ -485,6 +577,72 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
       );
     }
 
+    if (isNearLibrary) {
+      return (
+        <Pressable
+          style={[
+            styles.primaryActionButton,
+            styles.libraryActionButton,
+            { minWidth: menuButtonWidth, height: menuActionHeight },
+          ]}
+          onPress={(event) =>
+            handleControlPress(event, () => {
+              triggerEffect('📚 도서관 입장', charPos.x, charPos.y - 7);
+              onGoEncyclopedia();
+            })
+          }
+        >
+          <Ionicons name="book" size={menuButtonIconSize} color="#FFF7D6" />
+          <Text style={[styles.actionButtonText, menuButtonTextStyle]}>도서관</Text>
+        </Pressable>
+      );
+    }
+
+    if (isNearCabin) {
+      return (
+        <Pressable
+          style={[
+            styles.primaryActionButton,
+            styles.cabinActionButton,
+            { minWidth: menuButtonWidth, height: menuActionHeight },
+          ]}
+          onPress={(event) =>
+            handleControlPress(event, () => {
+              triggerEffect('🏡 오두막 입장', charPos.x, charPos.y - 7);
+              setCabinInteriorVisible(true);
+            })
+          }
+        >
+          <Ionicons name="home" size={menuButtonIconSize} color="#FFF7D6" />
+          <Text style={[styles.actionButtonText, menuButtonTextStyle]}>오두막</Text>
+        </Pressable>
+      );
+    }
+
+    if (isNearWarehouse) {
+      return (
+        <Pressable
+          style={[
+            styles.primaryActionButton,
+            styles.warehouseActionButton,
+            { minWidth: menuButtonWidth, height: menuActionHeight },
+          ]}
+          onPress={(event) =>
+            handleControlPress(event, () => {
+              triggerEffect('📦 창고 열기', charPos.x, charPos.y - 7);
+              setBagVisible(true);
+            })
+          }
+        >
+          <Ionicons name="archive" size={menuButtonIconSize} color="#FFF7D6" />
+          <Text style={[styles.actionButtonText, menuButtonTextStyle]}>창고</Text>
+          <View style={styles.actionBadge}>
+            <Text style={styles.actionBadgeText}>{seeds.length + harvestedCrops.length}</Text>
+          </View>
+        </Pressable>
+      );
+    }
+
     return (
       <Pressable
         style={[
@@ -502,7 +660,11 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const renderBagItem = (item: Seed | HarvestedCrop, type: 'seed' | 'crop') => (
     <View key={`${type}-${item.id}`} style={styles.bagItem}>
       <View style={styles.bagItemIcon}>
-        <Text style={styles.bagItemEmoji}>{item.emoji}</Text>
+        {type === 'seed' || item.visual ? (
+          <SeedVisual visual={item.visual} emoji={item.emoji} size={44} />
+        ) : (
+          <Text style={styles.bagItemEmoji}>{item.emoji}</Text>
+        )}
       </View>
       <View style={styles.bagItemCopy}>
         <Text style={styles.bagItemName} numberOfLines={1}>
@@ -518,7 +680,11 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const renderShopCrop = (crop: HarvestedCrop) => (
     <View key={`shop-${crop.id}`} style={styles.shopCropItem}>
       <View style={styles.bagItemIcon}>
-        <Text style={styles.bagItemEmoji}>{crop.emoji}</Text>
+        {crop.visual ? (
+          <SeedVisual visual={crop.visual} emoji={crop.emoji} size={44} />
+        ) : (
+          <Text style={styles.bagItemEmoji}>{crop.emoji}</Text>
+        )}
       </View>
       <View style={styles.bagItemCopy}>
         <Text style={styles.bagItemName} numberOfLines={1}>
@@ -528,9 +694,9 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
       </View>
       <Pressable
         style={styles.sellButton}
-        onPress={() => onSellHarvestedCrop(crop)}
+        onPress={() => handlePlainPress(() => onSellHarvestedCrop(crop))}
       >
-        <Text style={styles.sellButtonText}>120G 판매</Text>
+        <Text style={styles.sellButtonText}>350G 판매</Text>
       </Pressable>
     </View>
   );
@@ -539,7 +705,6 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
     <View style={styles.container}>
       <Pressable
         style={[styles.mapCanvas, { minHeight: mapMinHeight }]}
-        onLayout={handleMapLayout}
       >
         {/* === 상단 및 측면 울창한 숲 캐노피 (Dense Forest Wall & Borders) === */}
         <View style={styles.topForestCanopy} pointerEvents="none">
@@ -569,9 +734,6 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           <View style={[styles.treeCrown, { backgroundColor: '#316127', width: 76, height: 76, top: 170, right: -30 }]} />
           <View style={[styles.treeCrown, { backgroundColor: '#264E1F', width: 72, height: 72, top: 230, right: -25 }]} />
         </View>
-
-        {/* === 상단 건물 마당 흙바닥 (Upper Dirt Courtyard) === */}
-        <View style={styles.dirtCourtyard} pointerEvents="none" />
 
         {/* === 스타듀밸리 조약돌/흙길 산책로 (Cobblestone Paths) === */}
         <View style={styles.horizontalPath} pointerEvents="none">
@@ -614,26 +776,69 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           <View style={styles.fencePost} />
         </View>
 
-        {/* === 좌측: 빨간 목재 헛간 / 축사 (Wood Barn) === */}
-        <View style={styles.barnContainer} pointerEvents="none">
-          <View style={styles.barnRoof}>
-            <View style={styles.barnRoofRidge} />
+        {/* === 우측 뒤편: 마을 창고 (Village Warehouse - Layered Behind Cabin) === */}
+        <View style={styles.warehouseContainer} pointerEvents="none">
+          <View style={[styles.buildingSignPlate, isNearWarehouse && styles.buildingSignPlateActive]}>
+            <Ionicons name="archive" size={10} color="#FFE57F" />
+            <Text style={styles.buildingSignText}>창고</Text>
           </View>
-          <View style={styles.barnBody}>
-            {/* 건초 다락 창문 */}
-            <View style={styles.hayLoftWindow}>
-              <View style={styles.hayStraw} />
+          <View style={styles.warehouseRoof}>
+            <View style={styles.warehouseRoofRidge} />
+          </View>
+          <View style={styles.warehouseBody}>
+            <View style={styles.warehouseVentRow}>
+              <View style={styles.warehouseVentBar} />
+              <View style={styles.warehouseVentBar} />
+              <View style={styles.warehouseVentBar} />
             </View>
-            {/* 헛간 미닫이문 */}
-            <View style={styles.barnDoor}>
-              <View style={styles.barnDoorPlank} />
+            <View style={styles.warehouseDoor}>
+              <View style={styles.warehouseDoorStrap} />
+              <View style={[styles.warehouseDoorStrap, { marginTop: 10 }]} />
+              <View style={styles.warehouseLock} />
             </View>
           </View>
-          <View style={styles.barnBase} />
+          <View style={styles.warehouseBase} />
         </View>
 
-        {/* === 중앙: 스타듀밸리 농가 오두막 (Main Farmhouse Cabin) === */}
+        {/* === 좌측: 마을 도서관 (Village Library / Codex) === */}
+        <View style={styles.libraryContainer} pointerEvents="none">
+          <View style={[styles.buildingSignPlate, isNearLibrary && styles.buildingSignPlateActive]}>
+            <Ionicons name="book" size={10} color="#FFE57F" />
+            <Text style={styles.buildingSignText}>도서관</Text>
+          </View>
+          <View style={styles.libraryRoof}>
+            <View style={styles.libraryRoofRidge} />
+            <View style={styles.libraryCupola}>
+              <View style={styles.libraryCupolaSpire} />
+            </View>
+          </View>
+          <View style={styles.libraryBody}>
+            <View style={styles.libraryArchWindow}>
+              <View style={styles.libraryArchGlass} />
+            </View>
+            <View style={styles.libraryGroundRow}>
+              <View style={styles.libraryBookWindow}>
+                <View style={styles.bookshelfBar} />
+                <View style={[styles.bookshelfBar, { marginTop: 3 }]} />
+              </View>
+              <View style={styles.libraryDoor}>
+                <View style={styles.doorKnocker} />
+              </View>
+              <View style={styles.libraryBookWindow}>
+                <View style={styles.bookshelfBar} />
+                <View style={[styles.bookshelfBar, { marginTop: 3 }]} />
+              </View>
+            </View>
+          </View>
+          <View style={styles.libraryBase} />
+        </View>
+
+        {/* === 중앙 전면: 스타듀밸리 농가 오두막 본채 (Main Farmhouse Cabin) === */}
         <View style={styles.farmHouseContainer} pointerEvents="none">
+          <View style={[styles.buildingSignPlate, isNearCabin && styles.buildingSignPlateActive]}>
+            <Ionicons name="home" size={10} color="#FFE57F" />
+            <Text style={styles.buildingSignText}>오두막</Text>
+          </View>
           {/* 굴뚝 & 모락모락 연기 */}
           <View style={styles.chimney}>
             <View style={styles.smokePuff1} />
@@ -684,25 +889,11 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           </View>
         </View>
 
-        {/* === 우측: 유리 온실 & 가공 창고 (Stone Greenhouse & Workshop) === */}
-        <View style={styles.greenhouseContainer} pointerEvents="none">
-          <View style={styles.greenhouseRoof}>
-            <View style={styles.glassPaneRow}>
-              <View style={styles.glassPane} />
-              <View style={styles.glassPane} />
-              <View style={styles.glassPane} />
-            </View>
-          </View>
-          <View style={styles.greenhouseBody}>
-            <View style={styles.greenhouseWindow} />
-            <View style={styles.greenhouseDoor} />
-          </View>
-          <View style={styles.greenhouseBase} />
-        </View>
-
 
         {placedPlots.map((plot, index) => {
-          const crop = plants[index];
+          const crop =
+            plants.find((plant, plantIndex) => getPlantPlotIndex(plant, plantIndex) === index) ??
+            null;
           const isTargeted = nearbyPlotIndex === index;
           const isHarvestReady = Boolean(crop && crop.growthStage >= 4);
           const plotLabel = crop
@@ -716,12 +907,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                 styles.plotBox,
                 { left: `${plot.x}%`, top: `${plot.y}%` },
                 isTargeted && styles.plotBoxTargeted,
-                movingTarget?.type === 'plot' && movingTarget.id === plot.id && styles.movingTarget,
               ]}
-              onLongPress={(event) =>
-                startDraggingTarget(event, { type: 'plot', id: plot.id }, plot, plotLabel)
-              }
-              onPressOut={finishDraggingTarget}
               onPress={(event) => {
                 event.stopPropagation();
               }}
@@ -777,11 +963,12 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             styles.petSprite,
             { left: `${petPos.x}%`, top: `${petPos.y}%` },
             isWalking && styles.petWalking,
-            direction === 'left' && styles.petFacingLeft,
           ]}
         >
           <View style={styles.petShadow} />
-          <PetCharacter petId={petId} size={43} />
+          <View style={direction === 'left' && styles.petFacingLeft}>
+            <PetCharacter petId={petId} size={43} />
+          </View>
           <View style={styles.petNameTag}><Text style={styles.petNameTagText}>{petDefinition.name}</Text></View>
         </View>
 
@@ -800,7 +987,12 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             <TouchableOpacity
               activeOpacity={0.8}
               style={styles.headerShopButton}
-              onPress={(event) => handleControlPress(event, () => setShopVisible(true))}
+              onPress={(event) =>
+                handleControlPress(event, () => {
+                  setFarmNameDraft(farmName);
+                  setShopVisible(true);
+                })
+              }
             >
               <Ionicons name="storefront" size={16} color="#FFF7D6" />
               <Text style={styles.headerShopButtonText}>상점</Text>
@@ -875,23 +1067,6 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
               <Ionicons name="settings" size={menuButtonIconSize} color="#FFF7D6" />
               <Text style={[styles.bagButtonText, menuButtonTextStyle]}>설정</Text>
             </Pressable>
-            <Pressable
-              style={[styles.bookButton, menuButtonStyle]}
-              onPress={(event) => handleControlPress(event, onGoEncyclopedia)}
-            >
-              <Ionicons name="book" size={menuButtonIconSize} color="#FFF7D6" />
-              <Text style={[styles.bagButtonText, menuButtonTextStyle]}>도감</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.bagButton, menuButtonStyle]}
-              onPress={(event) => handleControlPress(event, () => setBagVisible(true))}
-            >
-              <Ionicons name="bag-handle" size={menuButtonIconSize} color="#FFF7D6" />
-              <Text style={[styles.bagButtonText, menuButtonTextStyle]}>가방</Text>
-              <View style={styles.bagCountBadge}>
-                <Text style={styles.bagCountText}>{seeds.length + harvestedCrops.length}</Text>
-              </View>
-            </Pressable>
             <View style={styles.actionDock}>{renderActionButton()}</View>
           </View>
         </View>
@@ -916,76 +1091,9 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             </View>
 
             <ScrollView contentContainerStyle={styles.settingsContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.settingsSectionTitle}>농장 이름</Text>
-              <Text style={styles.settingsDescription}>
-                입력한 이름이 농장 화면에 그대로 표시됩니다.
-              </Text>
-              <View style={styles.farmNameRow}>
-                <TextInput
-                  style={styles.farmNameInput}
-                  value={farmNameDraft}
-                  onChangeText={setFarmNameDraft}
-                  maxLength={20}
-                  placeholder="농장 이름"
-                  placeholderTextColor="#8A7956"
-                  returnKeyType="done"
-                  onSubmitEditing={handleSaveFarmName}
-                />
-                <Pressable
-                  style={[styles.farmNameSaveButton, savingFarmName && styles.logoutButtonDisabled]}
-                  onPress={handleSaveFarmName}
-                  disabled={savingFarmName}
-                >
-                  <Text style={styles.farmNameSaveButtonText}>
-                    {savingFarmName ? '저장 중' : '저장'}
-                  </Text>
-                </Pressable>
-              </View>
-              <View style={styles.settingsDivider} />
-              <Text style={styles.settingsSectionTitle}>내 캐릭터</Text>
-              <View style={styles.currentAvatarCard}>
-                <View style={[styles.currentAvatarIcon, { backgroundColor: avatarDefinition.color }]}>
-                  <Text style={styles.currentAvatarEmoji}>{avatarDefinition.emoji}</Text>
-                  <Text style={styles.currentAvatarStyleEmoji}>{avatarDefinition.styleEmoji}</Text>
-                </View>
-                <View style={styles.currentAvatarCopy}>
-                  <Text style={styles.currentAvatarName}>{avatarDefinition.name}</Text>
-                  <Text style={styles.currentAvatarDescription} numberOfLines={2}>{avatarDefinition.description}</Text>
-                </View>
-                <Pressable
-                  style={styles.changeAvatarButton}
-                  onPress={() => {
-                    setSettingsVisible(false);
-                    onChangeCharacter();
-                  }}
-                >
-                  <Text style={styles.changeAvatarButtonText}>변경</Text>
-                </Pressable>
-              </View>
-              <View style={styles.settingsDivider} />
-              <Text style={styles.settingsSectionTitle}>동행 친구</Text>
-              <View style={styles.currentAvatarCard}>
-                <View style={styles.currentPetIcon}>
-                  <PetCharacter petId={petId} size={42} />
-                </View>
-                <View style={styles.currentAvatarCopy}>
-                  <Text style={styles.currentAvatarName}>{petDefinition.name}</Text>
-                  <Text style={styles.currentAvatarDescription} numberOfLines={2}>{petDefinition.description}</Text>
-                </View>
-                <Pressable
-                  style={styles.changeAvatarButton}
-                  onPress={() => {
-                    setSettingsVisible(false);
-                    onChangePet();
-                  }}
-                >
-                  <Text style={styles.changeAvatarButtonText}>변경</Text>
-                </Pressable>
-              </View>
-              <View style={styles.settingsDivider} />
               <Text style={styles.settingsSectionTitle}>메뉴 버튼 크기</Text>
               <Text style={styles.settingsDescription}>
-                설정·도감·가방·탐험·심기 버튼의 크기를 한 번에 조절하세요.
+                설정·탐험·도서관·창고 버튼의 크기를 한 번에 조절하세요.
               </Text>
               <View style={styles.sliderValueRow}>
                 <Text style={styles.sliderEdgeLabel}>작게</Text>
@@ -1045,7 +1153,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                   pressed && styles.logoutButtonPressed,
                   loggingOut && styles.logoutButtonDisabled,
                 ]}
-                onPress={handleLogout}
+                onPress={() => handlePlainPress(handleLogout)}
                 disabled={loggingOut}
               >
                 <Ionicons name="log-out-outline" size={19} color="#8B2F2F" />
@@ -1054,6 +1162,212 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                 </Text>
               </Pressable>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={cabinInteriorVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCabinInteriorVisible(false)}
+      >
+        <View style={styles.cabinModalBackdrop}>
+          <View style={styles.cabinModalCard}>
+            {/* 상단 타이틀 바 */}
+            <View style={styles.cabinModalHeader}>
+              <View style={styles.cabinTitleGroup}>
+                <View style={styles.cabinHeaderIconBadge}>
+                  <Ionicons name="home" size={18} color="#FFE57F" />
+                </View>
+                <View>
+                  <Text style={styles.cabinTitleText}>{farmName} 오두막</Text>
+                  <Text style={styles.cabinSubtitleText}>따스한 장작불과 온기가 가득한 나의 집 🏡</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.cabinCloseBtn}
+                onPress={() => handlePlainPress(() => setCabinInteriorVisible(false))}
+              >
+                <Ionicons name="close" size={20} color="#FFF7D6" />
+              </TouchableOpacity>
+            </View>
+
+            {/* 실내 효과 알림 배너 */}
+            {interiorEffect ? (
+              <View style={styles.interiorEffectBanner}>
+                <Ionicons name="sparkles" size={16} color="#F59E0B" />
+                <Text style={styles.interiorEffectText}>{interiorEffect}</Text>
+              </View>
+            ) : null}
+
+            {/* 오두막 실내 룸 그래픽 */}
+            <View style={styles.roomContainer}>
+              {/* 벽면 (Warm Timber Wallpaper & Wainscoting) */}
+              <View style={styles.roomWall}>
+                <View style={styles.wallPlankLines}>
+                  <View style={styles.plankLine} />
+                  <View style={styles.plankLine} />
+                  <View style={styles.plankLine} />
+                </View>
+
+                {/* 벽면 장식: 창문, 괘종시계, 풍경 액자 */}
+                <View style={styles.wallDecorRow}>
+                  {/* 햇살 들어오는 격자 창문 */}
+                  <View style={styles.roomWindow}>
+                    <View style={styles.curtainLeft} />
+                    <View style={styles.windowGlassPane}>
+                      <View style={styles.sunBeamEffect} />
+                    </View>
+                    <View style={styles.curtainRight} />
+                  </View>
+
+                  {/* 앤틱 괘종시계 */}
+                  <View style={styles.wallClock}>
+                    <Ionicons name="time-outline" size={14} color="#FDE047" />
+                  </View>
+
+                  {/* 여행 풍경 액자 */}
+                  <View style={styles.wallFrame}>
+                    <Ionicons name="image" size={14} color="#60A5FA" />
+                  </View>
+                </View>
+
+                {/* 벽면 몰딩 베이스보드 */}
+                <View style={styles.wallBaseboard} />
+              </View>
+
+              {/* 바닥 (Cozy Hardwood Parquet Floor) */}
+              <View style={styles.roomFloor}>
+                <View style={styles.floorPlankRow}>
+                  <View style={styles.floorPlank} />
+                  <View style={styles.floorPlank} />
+                  <View style={styles.floorPlank} />
+                  <View style={styles.floorPlank} />
+                </View>
+
+                {/* 좌측: 벽난로 & 장작 */}
+                <View style={styles.fireplaceArea}>
+                  <View style={styles.brickChimney}>
+                    <View style={styles.mantleShelf}>
+                      <View style={styles.mantleCandle} />
+                      <View style={styles.mantlePhoto} />
+                    </View>
+                    <View style={styles.hearthFirebox}>
+                      <View style={styles.flameGlow} />
+                      <Text style={styles.fireEmoji}>🔥</Text>
+                    </View>
+                    <View style={styles.hearthStoneBase} />
+                  </View>
+                  <View style={styles.woodPileSmall}>
+                    <View style={styles.firewoodLog} />
+                    <View style={styles.firewoodLog} />
+                  </View>
+                </View>
+
+                {/* 중앙: 원형 양탄자 & 캐릭터 & 펫 */}
+                <View style={styles.centralRugArea}>
+                  <View style={styles.cozyRug}>
+                    <View style={styles.cozyRugInner}>
+                      <View style={styles.cozyRugCore} />
+                    </View>
+                  </View>
+                  <View style={styles.indoorCharactersRow}>
+                    <View style={styles.indoorPetSpot}>
+                      <PetCharacter petId={petId} size={42} />
+                      <View style={styles.petSleepBubble}>
+                        <Text style={styles.sleepZText}>zZ</Text>
+                      </View>
+                    </View>
+                    <View style={styles.indoorPlayerSpot}>
+                      <PlayerCharacter
+                        avatarId={avatarId}
+                        size={52}
+                        direction="down"
+                        isWalking={false}
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                {/* 우측: 포근한 침대 & 책장 */}
+                <View style={styles.bedroomArea}>
+                  {/* 포근한 침대 */}
+                  <View style={styles.cozyBed}>
+                    <View style={styles.bedHeadboard} />
+                    <View style={styles.bedMattress}>
+                      <View style={styles.bedPillow} />
+                      <View style={styles.bedBlanket}>
+                        <View style={styles.blanketStitch} />
+                        <View style={styles.blanketStitch} />
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* 원목 서가 책장 */}
+                  <View style={styles.indoorBookshelf}>
+                    <View style={styles.shelfRow}>
+                      <View style={[styles.bookSpine, { backgroundColor: '#DC2626' }]} />
+                      <View style={[styles.bookSpine, { backgroundColor: '#2563EB' }]} />
+                      <View style={[styles.bookSpine, { backgroundColor: '#16A34A' }]} />
+                      <View style={[styles.bookSpine, { backgroundColor: '#D97706' }]} />
+                    </View>
+                    <View style={styles.shelfDivider} />
+                    <View style={styles.shelfRow}>
+                      <View style={[styles.bookSpine, { backgroundColor: '#9333EA' }]} />
+                      <View style={[styles.bookSpine, { backgroundColor: '#0891B2' }]} />
+                      <View style={[styles.bookSpine, { backgroundColor: '#EA580C' }]} />
+                    </View>
+                  </View>
+                </View>
+
+                {/* 티 테이블 & 화분 (앞마당 쪽) */}
+                <View style={styles.teaTableSpot}>
+                  <View style={styles.teaTableSurface}>
+                    <Ionicons name="cafe" size={14} color="#D97706" />
+                  </View>
+                </View>
+                <View style={styles.indoorPlantSpot}>
+                  <Ionicons name="leaf" size={18} color="#22C55E" />
+                </View>
+              </View>
+            </View>
+
+            {/* 실내 인터랙션 액션 버튼 바 */}
+            <View style={styles.cabinActionButtonsRow}>
+              <TouchableOpacity
+                style={styles.cabinActionChip}
+                onPress={() => handlePlainPress(() => triggerInteriorEffect('침대에서 푹 쉬었습니다. 피로가 말끔히 풀렸습니다! ✨'))}
+              >
+                <Ionicons name="bed" size={16} color="#FFE57F" />
+                <Text style={styles.cabinActionChipText}>침대에서 휴식</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.cabinActionChip}
+                onPress={() => handlePlainPress(() => triggerInteriorEffect('향긋한 허브티를 마셨습니다. 마음이 차분해집니다 🍵'))}
+              >
+                <Ionicons name="cafe" size={16} color="#FDBA74" />
+                <Text style={styles.cabinActionChipText}>따뜻한 차 마시기</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.cabinActionChip}
+                onPress={() => handlePlainPress(() => triggerInteriorEffect('타닥타닥 장작 타는 소리에 온몸이 따스해집니다 🔥'))}
+              >
+                <Ionicons name="flame" size={16} color="#F87171" />
+                <Text style={styles.cabinActionChipText}>벽난로 불 쬐기</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* 밖으로 나가기 버튼 */}
+            <TouchableOpacity
+              style={styles.cabinExitButton}
+              onPress={() => handlePlainPress(() => setCabinInteriorVisible(false))}
+            >
+              <Ionicons name="log-out-outline" size={18} color="#FFF7D6" />
+              <Text style={styles.cabinExitButtonText}>농장으로 나가기</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1068,10 +1382,10 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           <View style={styles.bagModal}>
             <View style={styles.bagHeader}>
               <View>
-                <Text style={styles.bagEyebrow}>{farmName}</Text>
-                <Text style={styles.bagTitle}>가방</Text>
+                <Text style={styles.bagEyebrow}>{farmName} 농장 보관함</Text>
+                <Text style={styles.bagTitle}>창고</Text>
               </View>
-              <Pressable style={styles.bagCloseButton} onPress={() => setBagVisible(false)}>
+              <Pressable style={styles.bagCloseButton} onPress={() => handlePlainPress(() => setBagVisible(false))}>
                 <Ionicons name="close" size={20} color="#FFF7D6" />
               </Pressable>
             </View>
@@ -1118,13 +1432,145 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                 <Text style={styles.bagEyebrow}>보유금 {money}G</Text>
                 <Text style={styles.bagTitle}>상점</Text>
               </View>
-              <Pressable style={styles.bagCloseButton} onPress={() => setShopVisible(false)}>
+              <Pressable style={styles.bagCloseButton} onPress={() => handlePlainPress(() => setShopVisible(false))}>
                 <Ionicons name="close" size={20} color="#FFF7D6" />
               </Pressable>
             </View>
 
             <ScrollView style={styles.bagContent} showsVerticalScrollIndicator={false}>
               <View style={styles.bagSectionHeader}>
+                <Text style={styles.bagSectionTitle}>농장 관리 서비스</Text>
+                <Text style={styles.bagSectionCount}>각 {CHANGE_SERVICE_PRICE}G</Text>
+              </View>
+              <View style={styles.shopServiceCard}>
+                <View style={styles.shopServiceTitleRow}>
+                  <Ionicons name="home" size={18} color="#7C3F1D" />
+                  <Text style={styles.shopServiceTitle}>농장 이름 변경</Text>
+                </View>
+                <View style={styles.farmNameRow}>
+                  <TextInput
+                    style={styles.farmNameInput}
+                    value={farmNameDraft}
+                    onChangeText={setFarmNameDraft}
+                    maxLength={20}
+                    placeholder="농장 이름"
+                    placeholderTextColor="#8A7956"
+                    returnKeyType="done"
+                  />
+                  <Pressable
+                    style={[
+                      styles.farmNameSaveButton,
+                      (savingFarmName ||
+                        (farmNameDraft.trim() !== farmName && money < CHANGE_SERVICE_PRICE)) &&
+                        styles.logoutButtonDisabled,
+                    ]}
+                    onPress={() => handlePlainPress(handleSaveFarmName)}
+                    disabled={
+                      savingFarmName ||
+                      (farmNameDraft.trim() !== farmName && money < CHANGE_SERVICE_PRICE)
+                    }
+                  >
+                    <Text style={styles.farmNameSaveButtonText}>
+                      {savingFarmName ? '저장 중' : `${CHANGE_SERVICE_PRICE}G 저장`}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={styles.shopServiceRow}>
+                <View style={styles.currentAvatarCard}>
+                  <View style={[styles.currentAvatarIcon, { backgroundColor: avatarDefinition.color }]}>
+                    <Text style={styles.currentAvatarEmoji}>{avatarDefinition.emoji}</Text>
+                    <Text style={styles.currentAvatarStyleEmoji}>{avatarDefinition.styleEmoji}</Text>
+                  </View>
+                  <View style={styles.currentAvatarCopy}>
+                    <Text style={styles.currentAvatarName}>캐릭터 변경</Text>
+                    <Text style={styles.currentAvatarDescription} numberOfLines={2}>{avatarDefinition.name}</Text>
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.changeAvatarButton,
+                      money < CHANGE_SERVICE_PRICE && styles.unavailableButton,
+                    ]}
+                    onPress={() => handlePlainPress(handlePaidCharacterChange)}
+                    disabled={money < CHANGE_SERVICE_PRICE}
+                  >
+                    <Text style={styles.changeAvatarButtonText}>{CHANGE_SERVICE_PRICE}G</Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.currentAvatarCard}>
+                  <View style={styles.currentPetIcon}>
+                    <PetCharacter petId={petId} size={42} />
+                  </View>
+                  <View style={styles.currentAvatarCopy}>
+                    <Text style={styles.currentAvatarName}>동행 친구 변경</Text>
+                    <Text style={styles.currentAvatarDescription} numberOfLines={2}>{petDefinition.name}</Text>
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.changeAvatarButton,
+                      money < CHANGE_SERVICE_PRICE && styles.unavailableButton,
+                    ]}
+                    onPress={() => handlePlainPress(handlePaidPetChange)}
+                    disabled={money < CHANGE_SERVICE_PRICE}
+                  >
+                    <Text style={styles.changeAvatarButtonText}>{CHANGE_SERVICE_PRICE}G</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={[styles.bagSectionHeader, styles.shopSectionSpacing]}>
+                <Text style={styles.bagSectionTitle}>농장 능력 강화</Text>
+                <Text style={styles.bagSectionCount}>각 {CARE_UPGRADE_PRICE}G</Text>
+              </View>
+              <View style={styles.shopServiceRow}>
+                <View style={styles.currentAvatarCard}>
+                  <View style={[styles.currentAvatarIcon, styles.waterUpgradeIcon]}>
+                    <Ionicons name="water" size={26} color="#EAF7FF" />
+                  </View>
+                  <View style={styles.currentAvatarCopy}>
+                    <Text style={styles.currentAvatarName}>물 10초 단축</Text>
+                    <Text style={styles.currentAvatarDescription} numberOfLines={2}>
+                      현재 물 대기 {formatCooldownTime(waterCooldownMs)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.changeAvatarButton,
+                      money < CARE_UPGRADE_PRICE && styles.unavailableButton,
+                    ]}
+                    onPress={() => handlePlainPress(() => onBuyCareCooldownUpgrade('water'))}
+                    disabled={money < CARE_UPGRADE_PRICE}
+                  >
+                    <Text style={styles.changeAvatarButtonText}>{CARE_UPGRADE_PRICE}G</Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.currentAvatarCard}>
+                  <View style={[styles.currentAvatarIcon, styles.sunUpgradeIcon]}>
+                    <Ionicons name="sunny" size={27} color="#FFF7D6" />
+                  </View>
+                  <View style={styles.currentAvatarCopy}>
+                    <Text style={styles.currentAvatarName}>햇빛 10초 단축</Text>
+                    <Text style={styles.currentAvatarDescription} numberOfLines={2}>
+                      현재 햇빛 대기 {formatCooldownTime(sunCooldownMs)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.changeAvatarButton,
+                      money < CARE_UPGRADE_PRICE && styles.unavailableButton,
+                    ]}
+                    onPress={() => handlePlainPress(() => onBuyCareCooldownUpgrade('sun'))}
+                    disabled={money < CARE_UPGRADE_PRICE}
+                  >
+                    <Text style={styles.changeAvatarButtonText}>{CARE_UPGRADE_PRICE}G</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={[styles.bagSectionHeader, styles.shopSectionSpacing]}>
                 <Text style={styles.bagSectionTitle}>판매 가능한 수확물</Text>
                 <Text style={styles.bagSectionCount}>{harvestedCrops.length}개</Text>
               </View>
@@ -1143,7 +1589,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
               {SHOP_SEEDS.map(({ seed, price }) => (
                 <View key={seed.id} style={styles.shopCropItem}>
                   <View style={styles.bagItemIcon}>
-                    <Text style={styles.bagItemEmoji}>{seed.emoji}</Text>
+                    <SeedVisual visual={seed.visual} emoji={seed.emoji} size={44} />
                   </View>
                   <View style={styles.bagItemCopy}>
                     <Text style={styles.bagItemName}>{seed.name}</Text>
@@ -1151,44 +1597,12 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                   </View>
                   <Pressable
                     style={[styles.buyButton, money < price && styles.unavailableButton]}
-                    onPress={() => onBuySeed(seed, price)}
+                    onPress={() => handlePlainPress(() => onBuySeed(seed, price))}
                   >
                     <Text style={styles.buyButtonText}>{price}G 구매</Text>
                   </Pressable>
                 </View>
               ))}
-
-              <View style={[styles.bagSectionHeader, styles.shopSectionSpacing]}>
-                <Text style={styles.bagSectionTitle}>건물 구매</Text>
-                <Text style={styles.bagSectionCount}>계정당 1회 구매</Text>
-              </View>
-              {SHOP_BUILDINGS.map((building) => {
-                const isOwned = ownedBuildings.includes(building.id);
-                return (
-                  <View key={building.id} style={styles.shopCropItem}>
-                    <View style={styles.bagItemIcon}>
-                      <Text style={styles.bagItemEmoji}>{building.emoji}</Text>
-                    </View>
-                    <View style={styles.bagItemCopy}>
-                      <Text style={styles.bagItemName}>{building.name}</Text>
-                      <Text style={styles.bagItemMeta}>{building.description}</Text>
-                    </View>
-                    <Pressable
-                      style={[
-                        styles.buyButton,
-                        (isOwned || money < building.price) && styles.unavailableButton,
-                      ]}
-                      onPress={() =>
-                        onBuyBuilding(building.id, building.name, building.price)
-                      }
-                    >
-                      <Text style={styles.buyButtonText}>
-                        {isOwned ? '보유 중' : `${building.price}G 구매`}
-                      </Text>
-                    </Pressable>
-                  </View>
-                );
-              })}
             </ScrollView>
           </View>
         </View>
@@ -1320,17 +1734,6 @@ const styles = StyleSheet.create({
     zIndex: 3,
     overflow: 'hidden',
   },
-  dirtCourtyard: {
-    position: 'absolute',
-    left: 8,
-    right: 8,
-    top: 25,
-    height: 135,
-    backgroundColor: '#D1A358',
-    borderRadius: 14,
-    opacity: 0.5,
-    zIndex: 2,
-  },
 
   /* === 목책 울타리 라인 (Rustic Farm Fences) === */
   fenceSectionLeft: {
@@ -1370,86 +1773,146 @@ const styles = StyleSheet.create({
     borderRadius: 1,
   },
 
-  /* === 좌측: 목재 헛간 / 축사 (Wood Barn) === */
-  barnContainer: {
+  /* === 공통: 건물 명판 & 진입 발판 === */
+  buildingSignPlate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(34, 26, 16, 0.88)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#A17D46',
+    marginBottom: 4,
+    zIndex: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+  },
+  buildingSignPlateActive: {
+    borderColor: '#FACC15',
+    backgroundColor: 'rgba(23, 37, 84, 0.92)',
+    transform: [{ scale: 1.06 }],
+  },
+  buildingSignText: {
+    color: '#FFF7D6',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  /* === 좌측: 마을 도서관 (Village Library / Codex) === */
+  libraryContainer: {
     position: 'absolute',
-    left: 10,
-    top: 24,
-    width: 96,
-    height: 120,
+    left: '6%',
+    top: 18,
+    width: 100,
+    height: 130,
     alignItems: 'center',
     zIndex: 10,
   },
-  barnRoof: {
-    width: 94,
-    height: 40,
-    backgroundColor: '#8C3222',
+  libraryRoof: {
+    width: 98,
+    height: 42,
+    backgroundColor: '#26384A',
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
     borderWidth: 2,
-    borderColor: '#4A160D',
+    borderColor: '#17232E',
     alignItems: 'center',
   },
-  barnRoofRidge: {
-    width: 80,
+  libraryRoofRidge: {
+    width: 84,
     height: 4,
-    backgroundColor: '#B54734',
+    backgroundColor: '#3E5874',
     marginTop: 6,
     borderRadius: 2,
   },
-  barnBody: {
-    width: 86,
-    height: 60,
-    backgroundColor: '#BA4E38',
+  libraryCupola: {
+    position: 'absolute',
+    top: -8,
+    width: 16,
+    height: 9,
+    backgroundColor: '#17232E',
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 5,
+    alignItems: 'center',
+  },
+  libraryCupolaSpire: {
+    width: 2,
+    height: 5,
+    backgroundColor: '#FDE047',
+  },
+  libraryBody: {
+    width: 90,
+    height: 64,
+    backgroundColor: '#324558',
     borderWidth: 2,
-    borderColor: '#541F14',
+    borderColor: '#17232E',
     borderTopWidth: 0,
     alignItems: 'center',
     justifyContent: 'flex-end',
+    paddingBottom: 4,
   },
-  hayLoftWindow: {
-    width: 24,
-    height: 16,
-    backgroundColor: '#541F14',
-    borderRadius: 3,
+  libraryArchWindow: {
+    width: 20,
+    height: 14,
+    backgroundColor: '#17232E',
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  hayStraw: {
-    width: 18,
-    height: 10,
-    backgroundColor: '#FACC15',
-    borderRadius: 2,
+  libraryArchGlass: {
+    width: 14,
+    height: 9,
+    backgroundColor: '#FDE047',
+    borderTopLeftRadius: 7,
+    borderTopRightRadius: 7,
+    opacity: 0.9,
   },
-  barnDoor: {
-    width: 44,
-    height: 32,
-    backgroundColor: '#5A2A14',
+  libraryGroundRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingHorizontal: 4,
+  },
+  libraryBookWindow: {
+    width: 22,
+    height: 28,
+    backgroundColor: '#17232E',
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: '#4A6278',
+    padding: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bookshelfBar: {
+    width: 14,
+    height: 3,
+    backgroundColor: '#F59E0B',
+    borderRadius: 1,
+  },
+  libraryDoor: {
+    width: 26,
+    height: 36,
+    backgroundColor: '#5C3826',
     borderWidth: 2,
-    borderColor: '#321406',
+    borderColor: '#382013',
     borderTopLeftRadius: 4,
     borderTopRightRadius: 4,
-    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  barnDoorPlank: {
-    width: 2,
-    height: '100%',
-    backgroundColor: '#321406',
-  },
-  barnBase: {
-    width: 92,
+  libraryBase: {
+    width: 96,
     height: 6,
-    backgroundColor: '#485058',
+    backgroundColor: '#4B5563',
     borderRadius: 2,
-  },
-  barnSideProps: {
-    position: 'absolute',
-    left: -2,
-    bottom: 0,
-    flexDirection: 'row',
-    gap: 2,
   },
 
   /* === 중앙: 스타듀밸리 농가 오두막 (Farmhouse Cabin) === */
@@ -1457,11 +1920,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: '50%',
     marginLeft: -85,
-    top: '3%',
+    top: 22,
     width: 170,
     height: 140,
     alignItems: 'center',
-    zIndex: 10,
+    zIndex: 14,
   },
   chimney: {
     position: 'absolute',
@@ -1636,83 +2099,92 @@ const styles = StyleSheet.create({
     zIndex: 15,
   },
 
-  /* === 우측: 유리 온실 & 가공 창고 (Stone Greenhouse & Workshop) === */
-  greenhouseContainer: {
+  /* === 우측 뒤편: 마을 창고 (Village Warehouse / Storage - Behind Cabin) === */
+  warehouseContainer: {
     position: 'absolute',
-    right: 10,
-    top: 24,
-    width: 96,
-    height: 120,
-    alignItems: 'center',
-    zIndex: 10,
+    left: '50%',
+    marginLeft: 32,
+    top: 6,
+    width: 112,
+    height: 135,
+    alignItems: 'flex-end',
+    paddingRight: 6,
+    zIndex: 8,
   },
-  greenhouseRoof: {
-    width: 94,
-    height: 40,
-    backgroundColor: '#334155',
+  warehouseRoof: {
+    width: 106,
+    height: 44,
+    backgroundColor: '#6C2E0C',
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
     borderWidth: 2,
-    borderColor: '#1E293B',
+    borderColor: '#3D1703',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  glassPaneRow: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  glassPane: {
-    width: 22,
-    height: 22,
-    backgroundColor: '#7DD3FC',
-    borderRadius: 3,
-    opacity: 0.8,
-  },
-  greenhouseBody: {
-    width: 86,
-    height: 60,
-    backgroundColor: '#475569',
-    borderWidth: 2,
-    borderColor: '#1E293B',
-    borderTopWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingHorizontal: 4,
-  },
-  greenhouseWindow: {
-    width: 32,
-    height: 40,
-    backgroundColor: '#0284C7',
-    borderRadius: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  greenhousePlantEmoji: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  greenhouseDoor: {
-    width: 28,
-    height: 46,
-    backgroundColor: '#334155',
-    borderWidth: 2,
-    borderColor: '#0F172A',
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-  },
-  greenhouseBase: {
-    width: 92,
-    height: 6,
-    backgroundColor: '#374151',
+  warehouseRoofRidge: {
+    width: 90,
+    height: 4,
+    backgroundColor: '#8E4014',
+    marginTop: 6,
     borderRadius: 2,
   },
-  greenhouseSideProps: {
-    position: 'absolute',
-    right: -2,
-    bottom: 0,
+  warehouseBody: {
+    width: 98,
+    height: 66,
+    backgroundColor: '#7C3F1D',
+    borderWidth: 2,
+    borderColor: '#3D1703',
+    borderTopWidth: 0,
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    paddingRight: 6,
+    paddingBottom: 4,
+  },
+  warehouseVentRow: {
     flexDirection: 'row',
-    gap: 2,
+    gap: 4,
+    marginBottom: 5,
+    marginRight: 4,
+  },
+  warehouseVentBar: {
+    width: 12,
+    height: 4,
+    backgroundColor: '#2E1505',
+    borderRadius: 1,
+  },
+  warehouseDoor: {
+    width: 48,
+    height: 40,
+    backgroundColor: '#54260D',
+    borderWidth: 2,
+    borderColor: '#291103',
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 3,
+    marginRight: 2,
+  },
+  warehouseDoorStrap: {
+    width: 40,
+    height: 3,
+    backgroundColor: '#1E1714',
+    borderRadius: 1,
+  },
+  warehouseLock: {
+    position: 'absolute',
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#FACC15',
+    borderWidth: 1,
+    borderColor: '#78350F',
+  },
+  warehouseBase: {
+    width: 104,
+    height: 6,
+    backgroundColor: '#4B5563',
+    borderRadius: 2,
   },
 
 
@@ -1752,10 +2224,6 @@ const styles = StyleSheet.create({
   },
   plotBoxTargeted: {
     transform: [{ scale: 1.05 }],
-  },
-  movingTarget: {
-    transform: [{ scale: 1.08 }],
-    opacity: 0.82,
   },
   dirtPatch: {
     width: 102,
@@ -2241,39 +2709,31 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 10,
   },
-  bagButton: {
-    minWidth: 102,
-    height: 50,
-    borderRadius: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#5A3D26',
-    borderWidth: 2,
-    borderColor: 'rgba(255,247,214,0.2)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 7,
-    elevation: 4,
+  libraryActionButton: {
+    backgroundColor: '#1E3A8A',
+    borderColor: '#93C5FD',
   },
-  bookButton: {
-    minWidth: 102,
-    height: 50,
-    borderRadius: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#334A70',
-    borderWidth: 2,
-    borderColor: 'rgba(255,247,214,0.2)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 7,
-    elevation: 4,
+  warehouseActionButton: {
+    backgroundColor: '#78350F',
+    borderColor: '#FCD34D',
+  },
+  cabinActionButton: {
+    backgroundColor: '#9A3412',
+    borderColor: '#FDBA74',
+  },
+  actionBadge: {
+    marginLeft: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 9,
+    backgroundColor: '#F59E0B',
+    borderWidth: 1,
+    borderColor: '#FFF7D6',
+  },
+  actionBadgeText: {
+    color: '#3B1E08',
+    fontSize: 10,
+    fontWeight: '900',
   },
   petSprite: {
     position: 'absolute',
@@ -2464,6 +2924,12 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#FFF7D6',
   },
+  waterUpgradeIcon: {
+    backgroundColor: '#2563EB',
+  },
+  sunUpgradeIcon: {
+    backgroundColor: '#D97706',
+  },
   currentAvatarEmoji: { fontSize: 31 },
   currentAvatarStyleEmoji: { position: 'absolute', right: -4, bottom: -3, fontSize: 18 },
   currentAvatarCopy: { flex: 1 },
@@ -2471,6 +2937,28 @@ const styles = StyleSheet.create({
   currentAvatarDescription: { color: '#6B5A36', fontSize: 10, lineHeight: 14, fontWeight: '700', marginTop: 2 },
   changeAvatarButton: { backgroundColor: '#42592A', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 9, marginLeft: 8 },
   changeAvatarButtonText: { color: '#FFF7D6', fontSize: 12, fontWeight: '900' },
+  shopServiceCard: {
+    backgroundColor: '#F2E0A8',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#D5B66E',
+    padding: 11,
+    marginBottom: 8,
+  },
+  shopServiceTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 9,
+  },
+  shopServiceTitle: {
+    color: '#2B3F24',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  shopServiceRow: {
+    gap: 8,
+  },
   settingsDivider: { height: 2, backgroundColor: '#D9C99A', marginVertical: 16 },
   settingsDescription: {
     color: '#5E6D45',
@@ -2709,5 +3197,485 @@ const styles = StyleSheet.create({
     color: '#777153',
     fontSize: 12,
     fontWeight: '700',
+  },
+
+  /* === 아늑한 오두막 실내 (Cozy Cabin Interior) === */
+  cabinModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 12, 8, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  cabinModalCard: {
+    width: '100%',
+    maxWidth: 500,
+    backgroundColor: '#3E2718',
+    borderRadius: 16,
+    borderWidth: 3,
+    borderColor: '#7C4A21',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  cabinModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#2D1B10',
+    borderBottomWidth: 2,
+    borderColor: '#543018',
+  },
+  cabinTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cabinHeaderIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#7C4A21',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFE57F',
+  },
+  cabinTitleText: {
+    color: '#FFF7D6',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  cabinSubtitleText: {
+    color: '#E5C07B',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  cabinCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#4A2A14',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,247,214,0.3)',
+  },
+  interiorEffectBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(245, 158, 11, 0.25)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  interiorEffectText: {
+    color: '#FEF08A',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  roomContainer: {
+    width: '100%',
+    height: 250,
+    backgroundColor: '#6B4021',
+    overflow: 'hidden',
+    borderBottomWidth: 2,
+    borderColor: '#4A2810',
+  },
+  roomWall: {
+    height: 100,
+    backgroundColor: '#9A6335',
+    borderBottomWidth: 4,
+    borderColor: '#543118',
+    justifyContent: 'flex-end',
+    position: 'relative',
+  },
+  wallPlankLines: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'space-around',
+  },
+  plankLine: {
+    height: 1,
+    backgroundColor: 'rgba(84, 49, 24, 0.4)',
+  },
+  wallDecorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  roomWindow: {
+    width: 44,
+    height: 48,
+    backgroundColor: '#3E2412',
+    borderWidth: 2,
+    borderColor: '#291509',
+    borderRadius: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  curtainLeft: {
+    width: 9,
+    height: '100%',
+    backgroundColor: '#B91C1C',
+    borderRightWidth: 1,
+    borderColor: '#7F1D1D',
+  },
+  curtainRight: {
+    width: 9,
+    height: '100%',
+    backgroundColor: '#B91C1C',
+    borderLeftWidth: 1,
+    borderColor: '#7F1D1D',
+  },
+  windowGlassPane: {
+    flex: 1,
+    height: '100%',
+    backgroundColor: '#7DD3FC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sunBeamEffect: {
+    width: 2,
+    height: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  wallClock: {
+    width: 24,
+    height: 36,
+    backgroundColor: '#451A03',
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#78350F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wallFrame: {
+    width: 32,
+    height: 26,
+    backgroundColor: '#1E293B',
+    borderRadius: 3,
+    borderWidth: 2,
+    borderColor: '#CA8A04',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wallBaseboard: {
+    height: 4,
+    backgroundColor: '#4A2810',
+  },
+  roomFloor: {
+    flex: 1,
+    backgroundColor: '#7A431D',
+    position: 'relative',
+  },
+  floorPlankRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'space-evenly',
+  },
+  floorPlank: {
+    height: 1,
+    backgroundColor: 'rgba(54, 27, 8, 0.45)',
+  },
+  fireplaceArea: {
+    position: 'absolute',
+    left: 14,
+    bottom: 12,
+    alignItems: 'center',
+  },
+  brickChimney: {
+    width: 52,
+    height: 70,
+    backgroundColor: '#7F1D1D',
+    borderWidth: 2,
+    borderColor: '#450A0A',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  mantleShelf: {
+    position: 'absolute',
+    top: 0,
+    width: 60,
+    height: 6,
+    backgroundColor: '#5A2E14',
+    borderRadius: 2,
+  },
+  mantleCandle: {
+    position: 'absolute',
+    left: 6,
+    top: -8,
+    width: 6,
+    height: 8,
+    backgroundColor: '#FEF08A',
+    borderRadius: 1,
+  },
+  mantlePhoto: {
+    position: 'absolute',
+    right: 8,
+    top: -10,
+    width: 10,
+    height: 10,
+    backgroundColor: '#B45309',
+    borderRadius: 2,
+  },
+  hearthFirebox: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#1C1917',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  flameGlow: {
+    position: 'absolute',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(249, 115, 22, 0.35)',
+  },
+  fireEmoji: {
+    fontSize: 16,
+  },
+  hearthStoneBase: {
+    width: 54,
+    height: 6,
+    backgroundColor: '#57534E',
+    borderRadius: 2,
+  },
+  woodPileSmall: {
+    flexDirection: 'row',
+    gap: 3,
+    marginTop: 3,
+  },
+  firewoodLog: {
+    width: 14,
+    height: 5,
+    backgroundColor: '#451A03',
+    borderRadius: 2,
+  },
+  centralRugArea: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -55,
+    bottom: 14,
+    width: 110,
+    height: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cozyRug: {
+    position: 'absolute',
+    width: 104,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#9A3412',
+    borderWidth: 3,
+    borderColor: '#D97706',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cozyRugInner: {
+    width: 80,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#C2410C',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cozyRugCore: {
+    width: 54,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#FDE68A',
+  },
+  indoorCharactersRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    zIndex: 10,
+  },
+  indoorPetSpot: {
+    alignItems: 'center',
+  },
+  petSleepBubble: {
+    position: 'absolute',
+    top: -8,
+    right: -6,
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#94A3B8',
+  },
+  sleepZText: {
+    color: '#93C5FD',
+    fontSize: 8,
+    fontWeight: '900',
+  },
+  indoorPlayerSpot: {
+    alignItems: 'center',
+  },
+  bedroomArea: {
+    position: 'absolute',
+    right: 14,
+    bottom: 12,
+    alignItems: 'flex-end',
+  },
+  cozyBed: {
+    width: 54,
+    height: 64,
+    backgroundColor: '#451A03',
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#260E02',
+    padding: 2,
+  },
+  bedHeadboard: {
+    width: '100%',
+    height: 8,
+    backgroundColor: '#5A2E14',
+    borderRadius: 2,
+    marginBottom: 2,
+  },
+  bedMattress: {
+    flex: 1,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  bedPillow: {
+    width: 24,
+    height: 10,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginTop: 2,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  bedBlanket: {
+    flex: 1,
+    backgroundColor: '#991B1B',
+    marginTop: 4,
+    padding: 2,
+    justifyContent: 'space-around',
+  },
+  blanketStitch: {
+    height: 1,
+    backgroundColor: '#FCA5A5',
+    opacity: 0.5,
+  },
+  indoorBookshelf: {
+    width: 46,
+    height: 38,
+    backgroundColor: '#3E200C',
+    borderRadius: 3,
+    borderWidth: 2,
+    borderColor: '#261306',
+    padding: 2,
+    marginTop: 4,
+    justifyContent: 'space-around',
+  },
+  shelfRow: {
+    flexDirection: 'row',
+    gap: 2,
+    paddingHorizontal: 2,
+    alignItems: 'flex-end',
+  },
+  shelfDivider: {
+    height: 2,
+    backgroundColor: '#5A2E14',
+  },
+  bookSpine: {
+    width: 5,
+    height: 10,
+    borderRadius: 1,
+  },
+  teaTableSpot: {
+    position: 'absolute',
+    left: 80,
+    bottom: 8,
+    zIndex: 11,
+  },
+  teaTableSurface: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#543018',
+    borderWidth: 2,
+    borderColor: '#783E1B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indoorPlantSpot: {
+    position: 'absolute',
+    right: 80,
+    bottom: 8,
+    zIndex: 11,
+  },
+  cabinActionButtonsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 8,
+    padding: 14,
+    backgroundColor: '#2D1B10',
+  },
+  cabinActionChip: {
+    flex: 1,
+    minWidth: 100,
+    height: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#4A2A14',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#8B5A2B',
+  },
+  cabinActionChipText: {
+    color: '#FFF7D6',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  cabinExitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#24492E',
+    height: 46,
+    marginHorizontal: 14,
+    marginBottom: 14,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#488055',
+  },
+  cabinExitButtonText: {
+    color: '#FFF7D6',
+    fontSize: 14,
+    fontWeight: '900',
   },
 });

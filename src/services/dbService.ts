@@ -16,7 +16,6 @@ import {
   INITIAL_SEEDS,
   TOURIST_SPOTS,
   INITIAL_COUPONS,
-  INITIAL_ENCYCLOPEDIA,
 } from '../data/mockData';
 
 export const dbService = {
@@ -64,6 +63,14 @@ export const dbService = {
         typeof savedSettings.menuButtonScale === 'number'
           ? savedSettings.menuButtonScale
           : 1;
+      const waterCooldownReductionMs =
+        typeof savedSettings.waterCooldownReductionMs === 'number'
+          ? savedSettings.waterCooldownReductionMs
+          : 0;
+      const sunCooldownReductionMs =
+        typeof savedSettings.sunCooldownReductionMs === 'number'
+          ? savedSettings.sunCooldownReductionMs
+          : 0;
       const farmName =
         typeof savedSettings.farmName === 'string' && savedSettings.farmName.trim()
           ? savedSettings.farmName.trim()
@@ -93,10 +100,14 @@ export const dbService = {
           species: p.species,
           region: p.region,
           emoji: p.emoji,
+          visual: p.visual,
           growthStage: p.growth_stage,
           waterProgress: p.water_progress,
           sunProgress: p.sun_progress,
+          lastWateredAt: p.last_watered_at,
+          lastSunnedAt: p.last_sunned_at,
           harvestReward: p.harvest_reward,
+          plotIndex: p.plot_index,
         }));
       } else {
         // DB에 없으면 초기 데이터 세팅
@@ -118,6 +129,7 @@ export const dbService = {
           region: s.region,
           emoji: s.emoji,
           description: s.description,
+          visual: s.visual,
         }));
       } else {
         seeds = INITIAL_SEEDS;
@@ -168,19 +180,27 @@ export const dbService = {
 
       let encyclopedia: EncyclopediaItem[] = [];
       if (encData && encData.length > 0) {
-        encyclopedia = encData.map((e) => ({
-          id: e.id,
-          cropName: e.crop_name,
-          region: e.region,
-          emoji: e.emoji,
-          isDiscovered: e.is_discovered,
-          harvestCount: e.harvest_count,
-          story: e.story,
-          specialtyPoint: e.specialty_point,
-        }));
+        encyclopedia = encData
+          .map((e) => ({
+            id: e.id,
+            cropName: e.crop_name,
+            region: e.region,
+            emoji: e.emoji,
+            visual: e.visual,
+            isDiscovered: e.is_discovered,
+            harvestCount: e.harvest_count,
+            story: e.story,
+            specialtyPoint: e.specialty_point,
+            seedName: e.seed_name,
+            firstHarvestedAt: e.first_harvested_at,
+            lastHarvestedAt: e.last_harvested_at,
+          }))
+          .filter((item) => item.id.startsWith('harvest_') || Boolean(item.lastHarvestedAt));
+        if (encyclopedia.length !== encData.length) {
+          await this.syncEncyclopedia(userId, encyclopedia);
+        }
       } else {
-        encyclopedia = INITIAL_ENCYCLOPEDIA;
-        await this.syncEncyclopedia(userId, INITIAL_ENCYCLOPEDIA);
+        encyclopedia = [];
       }
 
       return {
@@ -201,6 +221,8 @@ export const dbService = {
           petId,
           dpadScale,
           menuButtonScale,
+          waterCooldownReductionMs,
+          sunCooldownReductionMs,
           farmName,
         },
       };
@@ -213,7 +235,7 @@ export const dbService = {
           seeds: INITIAL_SEEDS,
           touristSpots: TOURIST_SPOTS,
           coupons: INITIAL_COUPONS,
-          encyclopedia: INITIAL_ENCYCLOPEDIA,
+          encyclopedia: [],
           farmerName: '로컬 정원사',
           money: 1000,
           harvestedCrops: [],
@@ -224,6 +246,8 @@ export const dbService = {
           petId: null,
           dpadScale: 1,
           menuButtonScale: 1,
+          waterCooldownReductionMs: 0,
+          sunCooldownReductionMs: 0,
           farmName: '나의 농장',
         },
       };
@@ -243,7 +267,13 @@ export const dbService = {
 
   async updateControlSettings(
     userId: string,
-    settings: { dpadScale: number; menuButtonScale: number; farmName: string }
+    settings: {
+      dpadScale: number;
+      menuButtonScale: number;
+      farmName: string;
+      waterCooldownReductionMs: number;
+      sunCooldownReductionMs: number;
+    }
   ) {
     const { error } = await supabase
       .from('game_states')
@@ -318,10 +348,14 @@ export const dbService = {
           species: p.species,
           region: p.region,
           emoji: p.emoji,
+          visual: p.visual,
           growth_stage: p.growthStage,
           water_progress: p.waterProgress,
           sun_progress: p.sunProgress,
+          last_watered_at: p.lastWateredAt,
+          last_sunned_at: p.lastSunnedAt,
           harvest_reward: p.harvestReward,
+          plot_index: p.plotIndex,
         }));
         await supabase.from('plants').insert(rows);
       }
@@ -342,6 +376,7 @@ export const dbService = {
           region: s.region,
           emoji: s.emoji,
           description: s.description,
+          visual: s.visual,
         }));
         await supabase.from('seeds').insert(rows);
       }
@@ -402,6 +437,7 @@ export const dbService = {
   // 도감 동기화
   async syncEncyclopedia(userId: string, encyclopedia: EncyclopediaItem[]) {
     try {
+      await supabase.from('encyclopedia').delete().eq('user_id', userId);
       if (encyclopedia.length > 0) {
         const rows = encyclopedia.map((e) => ({
           id: e.id,
@@ -409,10 +445,14 @@ export const dbService = {
           crop_name: e.cropName,
           region: e.region,
           emoji: e.emoji,
+          visual: e.visual,
           is_discovered: e.isDiscovered,
           harvest_count: e.harvestCount,
           story: e.story,
           specialty_point: e.specialtyPoint,
+          seed_name: e.seedName,
+          first_harvested_at: e.firstHarvestedAt,
+          last_harvested_at: e.lastHarvestedAt,
         }));
         await supabase.from('encyclopedia').upsert(rows);
       }

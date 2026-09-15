@@ -4,10 +4,42 @@ export interface Plant {
   species: string;
   region: string;
   emoji: string;
+  visual?: SeedVisual;
+  plotIndex?: number;
   growthStage: number; // 0: 씨앗, 1: 새싹, 2: 꽃봉오리, 3: 열매맺음, 4: 수확가능
   waterProgress: number; // 0 to 100
   sunProgress: number; // 0 to 100
+  lastWateredAt?: string;
+  lastSunnedAt?: string;
   harvestReward: string;
+}
+
+export type SeedTheme =
+  | 'art'
+  | 'history'
+  | 'nature'
+  | 'sea'
+  | 'mountain'
+  | 'market'
+  | 'festival'
+  | 'local';
+
+export type SeedPattern =
+  | 'paint'
+  | 'metal'
+  | 'wave'
+  | 'leaf'
+  | 'stone'
+  | 'tile'
+  | 'spice'
+  | 'sparkle';
+
+export interface SeedVisual {
+  theme: SeedTheme;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  pattern: SeedPattern;
 }
 
 export interface Seed {
@@ -16,6 +48,7 @@ export interface Seed {
   region: string;
   emoji: string;
   description: string;
+  visual?: SeedVisual;
 }
 
 export interface HarvestedCrop {
@@ -23,6 +56,7 @@ export interface HarvestedCrop {
   name: string;
   region: string;
   emoji: string;
+  visual?: SeedVisual;
   harvestedAt: string;
 }
 
@@ -39,6 +73,7 @@ export interface TouristSpot {
   address: string;
   seedName: string;
   seedEmoji: string;
+  seedVisual?: SeedVisual;
   description: string;
   visited: boolean;
   distance: string;
@@ -47,6 +82,9 @@ export interface TouristSpot {
   imageUrl?: string;
   discoveryType?: 'popular' | 'nearPopular' | 'hiddenDiscovery';
   anchorName?: string;
+  popularityScore?: number;
+  besidePopularScore?: number;
+  hiddenScore?: number;
 }
 
 export interface Coupon {
@@ -66,8 +104,12 @@ export interface EncyclopediaItem {
   cropName: string;
   region: string;
   emoji: string;
+  visual?: SeedVisual;
   isDiscovered: boolean;
   harvestCount: number;
   story: string;
   specialtyPoint: string;
+  seedName?: string;
+  firstHarvestedAt?: string;
+  lastHarvestedAt?: string;
 }

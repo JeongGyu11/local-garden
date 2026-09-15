@@ -9,6 +9,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AvatarId, HarvestedCrop, PetId, Plant, Seed } from '../types';
 import { AnimalCrossingGarden } from './AnimalCrossingGarden';
+import { SeedVisual } from './SeedVisual';
 
 interface GardenTabProps {
   plants: Plant[];
@@ -22,6 +23,8 @@ interface GardenTabProps {
   petId: PetId;
   dpadScale: number;
   menuButtonScale: number;
+  waterCooldownReductionMs: number;
+  sunCooldownReductionMs: number;
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
@@ -30,13 +33,15 @@ interface GardenTabProps {
   onGoEncyclopedia: () => void;
   onSellHarvestedCrop: (crop: HarvestedCrop) => void;
   onBuySeed: (seed: Seed, price: number) => void;
-  onBuyBuilding: (buildingId: string, buildingName: string, price: number) => void;
+  onBuyCareCooldownUpgrade: (type: 'water' | 'sun') => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
   onChangeFarmName: (farmName: string) => Promise<void>;
   onControlSettingsChange: (settings: {
     dpadScale: number;
     menuButtonScale: number;
+    waterCooldownReductionMs: number;
+    sunCooldownReductionMs: number;
   }) => Promise<void>;
   onLogout: () => Promise<void>;
 }
@@ -55,6 +60,8 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   petId,
   dpadScale,
   menuButtonScale,
+  waterCooldownReductionMs,
+  sunCooldownReductionMs,
   onWater,
   onSun,
   onHarvest,
@@ -63,7 +70,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   onGoEncyclopedia,
   onSellHarvestedCrop,
   onBuySeed,
-  onBuyBuilding,
+  onBuyCareCooldownUpgrade,
   onChangeCharacter,
   onChangePet,
   onChangeFarmName,
@@ -129,6 +136,8 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           petId={petId}
           initialDpadScale={dpadScale}
           initialMenuButtonScale={menuButtonScale}
+          waterCooldownReductionMs={waterCooldownReductionMs}
+          sunCooldownReductionMs={sunCooldownReductionMs}
           onWater={onWater}
           onSun={onSun}
           onHarvest={onHarvest}
@@ -137,7 +146,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           onGoEncyclopedia={onGoEncyclopedia}
           onSellHarvestedCrop={onSellHarvestedCrop}
           onBuySeed={onBuySeed}
-          onBuyBuilding={onBuyBuilding}
+          onBuyCareCooldownUpgrade={onBuyCareCooldownUpgrade}
           onChangeCharacter={onChangeCharacter}
           onChangePet={onChangePet}
           onChangeFarmName={onChangeFarmName}
@@ -184,7 +193,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           {/* 재배 중인 특산 작물 목록 */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>재배 중인 특산 작물 ({plants.length})</Text>
-            <Text style={styles.sectionSub}>물과 햇빛을 주어 수확 단계까지 키워보세요!</Text>
+            <Text style={styles.sectionSub}>물 2번, 햇빛 2번으로 수확 단계까지 키워보세요!</Text>
           </View>
 
           {plants.length === 0 ? (
@@ -284,7 +293,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
                           onPress={() => onWater(plant.id)}
                         >
                           <Ionicons name="water" size={16} color="#2563EB" />
-                          <Text style={styles.waterBtnText}>물주기 (+25%)</Text>
+                          <Text style={styles.waterBtnText}>물주기 (+50%)</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -292,7 +301,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
                           onPress={() => onSun(plant.id)}
                         >
                           <Ionicons name="sunny" size={16} color="#D97706" />
-                          <Text style={styles.sunBtnText}>햇빛쬐기 (+25%)</Text>
+                          <Text style={styles.sunBtnText}>햇빛쬐기 (+50%)</Text>
                         </TouchableOpacity>
                       </>
                     )}
@@ -318,7 +327,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
             seeds.map((seed) => (
               <View key={seed.id} style={styles.seedCard}>
                 <View style={styles.seedEmojiBox}>
-                  <Text style={styles.seedEmoji}>{seed.emoji}</Text>
+                  <SeedVisual visual={seed.visual} emoji={seed.emoji} size={42} />
                 </View>
                 <View style={styles.seedInfo}>
                   <View style={styles.seedTitleRow}>

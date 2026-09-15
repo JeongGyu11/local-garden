@@ -18,7 +18,6 @@ import { Session } from '@supabase/supabase-js';
 import {
   INITIAL_PLANTS,
   INITIAL_SEEDS,
-  INITIAL_ENCYCLOPEDIA,
 } from './src/data/mockData';
 import {
   AvatarId,
@@ -37,7 +36,6 @@ import { fetchNearbyHiddenTouristSpots } from './src/services/tourApi';
 import { GardenTab } from './src/components/GardenTab';
 import { ExploreTab } from './src/components/ExploreTab';
 import { EncyclopediaTab } from './src/components/EncyclopediaTab';
-import { HarvestModal } from './src/components/HarvestModal';
 import { CheckInModal } from './src/components/CheckInModal';
 import { AuthGate } from './src/components/AuthGate';
 import { CharacterSurvey } from './src/components/CharacterSurvey';
@@ -50,8 +48,39 @@ type CheckInNotice = { title: string; message: string } | null;
 
 const CHECK_IN_RADIUS_METERS = 500;
 const CHECK_IN_COOLDOWN_MS = 15 * 60 * 1000;
+const CARE_COOLDOWN_MS = 20 * 60 * 1000;
+const HARVEST_SELL_PRICE = 350;
+const CHANGE_SERVICE_PRICE = 500;
+const CARE_UPGRADE_PRICE = 200;
+const CARE_UPGRADE_REDUCTION_MS = 10 * 1000;
+const DEFAULT_EXPLORE_RADIUS_METERS = 5000;
+const CARE_PROGRESS_STEP = 50;
 const LEGACY_DEFAULT_PLANT_IDS = new Set(['p1', 'p2']);
 const LEGACY_DEFAULT_SEED_IDS = new Set(['s1']);
+
+const getPlantPlotIndex = (plant: Plant, fallbackIndex: number) => {
+  if (typeof plant.plotIndex === 'number') {
+    return plant.plotIndex;
+  }
+
+  const match = plant.id.match(/^p_plot_(\d+)_/);
+  if (match) {
+    return Number(match[1]);
+  }
+
+  return fallbackIndex;
+};
+
+const normalizePlantPlot = (plant: Plant, fallbackIndex: number) => {
+  const plotIndex = getPlantPlotIndex(plant, fallbackIndex);
+  const hasStablePlotId = /^p_plot_\d+_/.test(plant.id);
+
+  return {
+    ...plant,
+    id: hasStablePlotId ? plant.id : `p_plot_${plotIndex}_${plant.id}`,
+    plotIndex,
+  };
+};
 
 const getDistanceMeters = (from: LocationPoint, to: LocationPoint) => {
   const earthRadiusMeters = 6371000;
@@ -84,6 +113,42 @@ const formatCooldown = (milliseconds: number) => {
   return `${minutes}분 ${String(seconds).padStart(2, '0')}초`;
 };
 
+const getGrowthStageFromCare = (waterProgress: number, sunProgress: number) => {
+  const waterCareCount = Math.floor(waterProgress / CARE_PROGRESS_STEP);
+  const sunCareCount = Math.floor(sunProgress / CARE_PROGRESS_STEP);
+  return Math.min(4, waterCareCount + sunCareCount);
+};
+
+const getEffectiveCareCooldownMs = (reductionMs: number) =>
+  Math.max(0, CARE_COOLDOWN_MS - reductionMs);
+
+const getRemainingCooldownMs = (lastUsedAt: string | undefined, cooldownMs: number) => {
+  if (!lastUsedAt) {
+    return 0;
+  }
+  const lastTime = new Date(lastUsedAt).getTime();
+  if (Number.isNaN(lastTime)) {
+    return 0;
+  }
+  return Math.max(0, cooldownMs - (Date.now() - lastTime));
+};
+
+const createEncyclopediaId = (name: string, region: string) =>
+  `harvest_${region}_${name}`
+    .replace(/\s+/g, '_')
+    .replace(/[^\w가-힣]/g, '');
+
+const createHarvestCropName = (plant: Plant) => {
+  const baseName = plant.name.replace(/\s*열매$/, '').trim();
+  return `${baseName} 열매`;
+};
+
+const createHarvestStory = (plant: Plant) =>
+  `${createHarvestCropName(plant)}를 수확했었다.`;
+
+const createSpecialtyPoint = (plant: Plant) =>
+  `${plant.species}에서 자란 수확 기록입니다.`;
+
 function GameApp({ session }: { session: Session }) {
   const userId = session.user.id;
   const [activeTab, setActiveTab] = useState<TabType>('garden');
@@ -107,20 +172,20 @@ function GameApp({ session }: { session: Session }) {
   const [petId, setPetId] = useState<PetId>('meerkat');
   const [dpadScale, setDpadScale] = useState(1);
   const [menuButtonScale, setMenuButtonScale] = useState(1);
+  const [waterCooldownReductionMs, setWaterCooldownReductionMs] = useState(0);
+  const [sunCooldownReductionMs, setSunCooldownReductionMs] = useState(0);
   const [farmName, setFarmName] = useState('나의 농장');
   const [petSurveyVisible, setPetSurveyVisible] = useState(false);
   const [editingPet, setEditingPet] = useState(false);
   const [touristSpots, setTouristSpots] = useState<TouristSpot[]>([]);
-  const [encyclopedia, setEncyclopedia] = useState<EncyclopediaItem[]>(INITIAL_ENCYCLOPEDIA);
+  const [exploreRadiusMeters, setExploreRadiusMeters] = useState(DEFAULT_EXPLORE_RADIUS_METERS);
+  const [encyclopedia, setEncyclopedia] = useState<EncyclopediaItem[]>([]);
 
   // 모달 상태
   const [checkInModalVisible, setCheckInModalVisible] = useState<boolean>(false);
   const [selectedSpotForCheckIn, setSelectedSpotForCheckIn] = useState<TouristSpot | null>(null);
   const [checkInNotice, setCheckInNotice] = useState<CheckInNotice>(null);
   const [checkInCooldownUntil, setCheckInCooldownUntil] = useState<Record<string, number>>({});
-
-  const [harvestModalVisible, setHarvestModalVisible] = useState<boolean>(false);
-  const [harvestedPlant, setHarvestedPlant] = useState<Plant | null>(null);
 
   const mergeVisitedState = (apiSpots: TouristSpot[], savedSpots: TouristSpot[]) => {
     const visitedSpotKeys = new Set(
@@ -135,7 +200,10 @@ function GameApp({ session }: { session: Session }) {
     }));
   };
 
-  const loadGpsTouristSpots = async (savedSpots: TouristSpot[] = touristSpots) => {
+  const loadGpsTouristSpots = async (
+    savedSpots: TouristSpot[] = touristSpots,
+    radiusMeters = exploreRadiusMeters
+  ) => {
     setGpsLoading(true);
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
@@ -157,15 +225,16 @@ function GameApp({ session }: { session: Session }) {
 
       const nearbySpots = await fetchNearbyHiddenTouristSpots(
         nextLocation.latitude,
-        nextLocation.longitude
+        nextLocation.longitude,
+        radiusMeters
       );
 
       if (nearbySpots.length > 0) {
         setTouristSpots(mergeVisitedState(nearbySpots, savedSpots));
-        setGpsStatusText('현재 GPS 기준 TourAPI 장소를 Gemini가 분류해 표시 중');
+        setGpsStatusText(`현재 GPS 기준 ${Math.round(radiusMeters / 1000)}km 안 TourAPI 장소를 Gemini가 분류해 표시 중`);
       } else {
         setTouristSpots([]);
-        setGpsStatusText('현재 위치 주변에 인증 가능한 TourAPI 관광지가 없습니다');
+        setGpsStatusText(`현재 위치 ${Math.round(radiusMeters / 1000)}km 안에 인증 가능한 TourAPI 관광지가 없습니다`);
       }
     } catch (gpsErr) {
       console.warn('GPS TourAPI load failed:', gpsErr);
@@ -183,11 +252,15 @@ function GameApp({ session }: { session: Session }) {
       try {
         const result = await dbService.loadUserData(userId);
         if (result.data) {
-          const cleanedPlants = result.data.plants.filter(
+          const rawPlants = result.data.plants.filter(
             (plant) => !LEGACY_DEFAULT_PLANT_IDS.has(plant.id)
           );
+          const cleanedPlants = rawPlants.map(normalizePlantPlot);
           setPlants(cleanedPlants);
-          if (cleanedPlants.length !== result.data.plants.length) {
+          const shouldSyncCleanedPlants =
+            cleanedPlants.length !== result.data.plants.length ||
+            cleanedPlants.some((plant, index) => plant.id !== rawPlants[index]?.id);
+          if (shouldSyncCleanedPlants) {
             dbService.syncPlants(userId, cleanedPlants);
           }
           const cleanedSeeds = result.data.seeds.filter(
@@ -216,6 +289,8 @@ function GameApp({ session }: { session: Session }) {
           }
           setDpadScale(result.data.dpadScale);
           setMenuButtonScale(result.data.menuButtonScale);
+          setWaterCooldownReductionMs(result.data.waterCooldownReductionMs);
+          setSunCooldownReductionMs(result.data.sunCooldownReductionMs);
           setFarmName(result.data.farmName);
           setPetSurveyVisible(!needsCharacter && !result.data.petId);
           setEditingPet(false);
@@ -234,17 +309,25 @@ function GameApp({ session }: { session: Session }) {
   // 1. 물주기 핸들러
   const handleWater = (plantId: string) => {
     setPlants((prev) => {
+      const targetPlant = prev.find((p) => p.id === plantId);
+      const remainingMs = getRemainingCooldownMs(
+        targetPlant?.lastWateredAt,
+        getEffectiveCareCooldownMs(waterCooldownReductionMs)
+      );
+      if (remainingMs > 0) {
+        Alert.alert('아직 물을 줄 수 없어요', `${formatCooldown(remainingMs)} 뒤에 다시 물을 줄 수 있어요.`);
+        return prev;
+      }
+      const caredAt = new Date().toISOString();
       const nextPlants = prev.map((p) => {
         if (p.id === plantId) {
-          const nextWater = Math.min(100, p.waterProgress + 25);
-          const nextStage =
-            nextWater >= 100 && p.sunProgress >= 80
-              ? Math.min(4, p.growthStage + 1)
-              : p.growthStage;
+          const nextWater = Math.min(100, p.waterProgress + CARE_PROGRESS_STEP);
+          const nextStage = getGrowthStageFromCare(nextWater, p.sunProgress);
           return {
             ...p,
             waterProgress: nextWater,
             growthStage: nextStage,
+            lastWateredAt: caredAt,
           };
         }
         return p;
@@ -257,17 +340,25 @@ function GameApp({ session }: { session: Session }) {
   // 2. 햇빛 쬐기 핸들러
   const handleSun = (plantId: string) => {
     setPlants((prev) => {
+      const targetPlant = prev.find((p) => p.id === plantId);
+      const remainingMs = getRemainingCooldownMs(
+        targetPlant?.lastSunnedAt,
+        getEffectiveCareCooldownMs(sunCooldownReductionMs)
+      );
+      if (remainingMs > 0) {
+        Alert.alert('아직 햇빛을 줄 수 없어요', `${formatCooldown(remainingMs)} 뒤에 다시 햇빛을 줄 수 있어요.`);
+        return prev;
+      }
+      const caredAt = new Date().toISOString();
       const nextPlants = prev.map((p) => {
         if (p.id === plantId) {
-          const nextSun = Math.min(100, p.sunProgress + 25);
-          const nextStage =
-            p.waterProgress >= 80 && nextSun >= 100
-              ? Math.min(4, p.growthStage + 1)
-              : p.growthStage;
+          const nextSun = Math.min(100, p.sunProgress + CARE_PROGRESS_STEP);
+          const nextStage = getGrowthStageFromCare(p.waterProgress, nextSun);
           return {
             ...p,
             sunProgress: nextSun,
             growthStage: nextStage,
+            lastSunnedAt: caredAt,
           };
         }
         return p;
@@ -279,14 +370,13 @@ function GameApp({ session }: { session: Session }) {
 
   // 3. 수확 핸들러 (수확 -> 도감 기록 및 경험치 상승)
   const handleHarvest = (plant: Plant) => {
-    setHarvestedPlant(plant);
-    setHarvestModalVisible(true);
-
+    const harvestCropName = createHarvestCropName(plant);
     const harvestedCrop: HarvestedCrop = {
       id: `harvest_${plant.id}_${Date.now()}`,
-      name: plant.name,
+      name: harvestCropName,
       region: plant.region,
       emoji: plant.emoji,
+      visual: plant.visual,
       harvestedAt: new Date().toISOString(),
     };
     const nextHarvestedCrops = [harvestedCrop, ...harvestedCrops];
@@ -298,18 +388,51 @@ function GameApp({ session }: { session: Session }) {
     setPlants(nextPlants);
     dbService.syncPlants(userId, nextPlants);
 
-    // 도감 수확 카운트 증가 & 동기화
-    const nextEnc = encyclopedia.map((item) =>
-      item.cropName.includes(plant.region) || item.region === plant.region
-        ? { ...item, isDiscovered: true, harvestCount: item.harvestCount + 1 }
-        : item
-    );
+    // 수확한 작물 자체를 기준으로 도감 기록 생성 및 갱신
+    const encyclopediaId = createEncyclopediaId(harvestCropName, plant.region);
+    const existingEntry = encyclopedia.find((item) => item.id === encyclopediaId);
+    const nextEntry: EncyclopediaItem = {
+      id: encyclopediaId,
+      cropName: harvestCropName,
+      region: plant.region,
+      emoji: plant.emoji,
+      visual: plant.visual,
+      isDiscovered: true,
+      harvestCount: (existingEntry?.harvestCount ?? 0) + 1,
+      story: existingEntry?.story ?? createHarvestStory(plant),
+      specialtyPoint: existingEntry?.specialtyPoint ?? createSpecialtyPoint(plant),
+      seedName: plant.species,
+      firstHarvestedAt: existingEntry?.firstHarvestedAt ?? harvestedCrop.harvestedAt,
+      lastHarvestedAt: harvestedCrop.harvestedAt,
+    };
+    const nextEnc = existingEntry
+      ? encyclopedia.map((item) => (item.id === encyclopediaId ? nextEntry : item))
+      : [nextEntry, ...encyclopedia];
     setEncyclopedia(nextEnc);
     dbService.syncEncyclopedia(userId, nextEnc);
+    Alert.alert('수확 완료', `${harvestCropName}을(를) 수확했습니다.`);
+  };
+
+  const handleExploreRadiusChange = (radiusMeters: number) => {
+    setExploreRadiusMeters(radiusMeters);
+    loadGpsTouristSpots(touristSpots, radiusMeters);
   };
 
   // 4. 씨앗 심기 핸들러
   const handlePlantSeed = (seed: Seed, plotIndex?: number) => {
+    const occupiedPlotIndexes = new Set(
+      plants.map((plant, index) => getPlantPlotIndex(plant, index))
+    );
+    const targetPlotIndex =
+      typeof plotIndex === 'number' && plotIndex >= 0 && plotIndex < 4
+        ? plotIndex
+        : [0, 1, 2, 3].find((index) => !occupiedPlotIndexes.has(index));
+
+    if (targetPlotIndex === undefined) {
+      Alert.alert('빈 밭이 없어요', '수확하거나 빈 밭으로 이동한 뒤 다시 심어주세요.');
+      return;
+    }
+
     // 씨앗 보관함에서 제거 & 동기화
     const nextSeeds = seeds.filter((s) => s.id !== seed.id);
     setSeeds(nextSeeds);
@@ -317,22 +440,24 @@ function GameApp({ session }: { session: Session }) {
 
     // 밭에 새 작물 등록 & 동기화
     const newPlant: Plant = {
-      id: `p_${Date.now()}`,
+      id: `p_plot_${targetPlotIndex}_${Date.now()}`,
       name: seed.name.replace(' 씨앗', ''),
-      species: `${seed.region} 특산 품종`,
+      species: seed.name,
       region: seed.region,
       emoji: seed.emoji,
+      visual: seed.visual,
+      plotIndex: targetPlotIndex,
       growthStage: 0, // 씨앗 상태
-      waterProgress: 20,
-      sunProgress: 20,
+      waterProgress: 0,
+      sunProgress: 0,
+      lastWateredAt: undefined,
+      lastSunnedAt: undefined,
       harvestReward: `${seed.region} 특산 마스터 배지`,
     };
-    const nextPlants = [...plants];
-    if (typeof plotIndex === 'number' && plotIndex >= 0 && plotIndex < 4) {
-      nextPlants[plotIndex] = newPlant;
-    } else {
-      nextPlants.unshift(newPlant);
-    }
+    const nextPlants = [
+      ...plants.filter((plant, index) => getPlantPlotIndex(plant, index) !== targetPlotIndex),
+      newPlant,
+    ];
     setPlants(nextPlants);
     dbService.syncPlants(userId, nextPlants);
 
@@ -416,6 +541,7 @@ function GameApp({ session }: { session: Session }) {
       name: spot.seedName,
       region: spot.region,
       emoji: spot.seedEmoji,
+      visual: spot.seedVisual,
       description: `${spot.title} 방문 인증으로 획득한 귀한 특산 씨앗`,
     };
     const nextSeeds = [newSeed, ...seeds];
@@ -450,9 +576,19 @@ function GameApp({ session }: { session: Session }) {
     if (!normalizedName) {
       throw new Error('농장 이름을 입력해주세요.');
     }
+    if (normalizedName !== farmName) {
+      if (money < CHANGE_SERVICE_PRICE) {
+        throw new Error(`농장 이름 변경에는 ${CHANGE_SERVICE_PRICE}G가 필요합니다.`);
+      }
+      const nextMoney = money - CHANGE_SERVICE_PRICE;
+      setMoney(nextMoney);
+      await dbService.updateGameState(userId, { money: nextMoney });
+    }
     await dbService.updateControlSettings(userId, {
       dpadScale,
       menuButtonScale,
+      waterCooldownReductionMs,
+      sunCooldownReductionMs,
       farmName: normalizedName,
     });
     setFarmName(normalizedName);
@@ -462,22 +598,59 @@ function GameApp({ session }: { session: Session }) {
     dpadScale: number;
     menuButtonScale: number;
     farmName: string;
+    waterCooldownReductionMs: number;
+    sunCooldownReductionMs: number;
   }) => {
     setDpadScale(settings.dpadScale);
     setMenuButtonScale(settings.menuButtonScale);
+    setWaterCooldownReductionMs(settings.waterCooldownReductionMs);
+    setSunCooldownReductionMs(settings.sunCooldownReductionMs);
     await dbService.updateControlSettings(userId, settings);
+  };
+
+  const handleBuyCareCooldownUpgrade = async (type: 'water' | 'sun') => {
+    if (money < CARE_UPGRADE_PRICE) {
+      Alert.alert('골드가 부족해요', `${CARE_UPGRADE_PRICE - money}G가 더 필요합니다.`);
+      return;
+    }
+
+    const nextMoney = money - CARE_UPGRADE_PRICE;
+    const nextWaterReduction =
+      type === 'water'
+        ? waterCooldownReductionMs + CARE_UPGRADE_REDUCTION_MS
+        : waterCooldownReductionMs;
+    const nextSunReduction =
+      type === 'sun'
+        ? sunCooldownReductionMs + CARE_UPGRADE_REDUCTION_MS
+        : sunCooldownReductionMs;
+
+    setMoney(nextMoney);
+    setWaterCooldownReductionMs(nextWaterReduction);
+    setSunCooldownReductionMs(nextSunReduction);
+    await dbService.updateGameState(userId, { money: nextMoney });
+    await dbService.updateControlSettings(userId, {
+      dpadScale,
+      menuButtonScale,
+      farmName,
+      waterCooldownReductionMs: nextWaterReduction,
+      sunCooldownReductionMs: nextSunReduction,
+    });
+    Alert.alert(
+      '강화 완료',
+      `${type === 'water' ? '물주기' : '햇빛쬐기'} 대기 시간이 영구적으로 10초 줄었습니다.`
+    );
   };
 
   const handleSellHarvestedCrop = (crop: HarvestedCrop) => {
     const nextCrops = harvestedCrops.filter((item) => item.id !== crop.id);
-    const nextMoney = money + 120;
+    const nextMoney = money + HARVEST_SELL_PRICE;
     setHarvestedCrops(nextCrops);
     setMoney(nextMoney);
     dbService.updateGameState(userId, {
       money: nextMoney,
       harvestedCrops: nextCrops,
     });
-    Alert.alert('판매 완료', `${crop.name}을(를) 판매해 120G를 벌었습니다.`);
+    Alert.alert('판매 완료', `${crop.name}을(를) 판매해 ${HARVEST_SELL_PRICE}G를 벌었습니다.`);
   };
 
   const handleBuySeed = (seed: Seed, price: number) => {
@@ -495,31 +668,20 @@ function GameApp({ session }: { session: Session }) {
     Alert.alert('구매 완료', `${seed.name}을(를) 가방에 넣었습니다.`);
   };
 
-  const handleBuyBuilding = (buildingId: string, buildingName: string, price: number) => {
-    if (ownedBuildings.includes(buildingId)) {
-      Alert.alert('이미 보유 중이에요', `${buildingName}은(는) 이미 구매했습니다.`);
-      return;
-    }
-    if (money < price) {
-      Alert.alert('골드가 부족해요', `${price - money}G가 더 필요합니다.`);
-      return;
-    }
-    const nextBuildings = [...ownedBuildings, buildingId];
-    const nextMoney = money - price;
-    setOwnedBuildings(nextBuildings);
-    setMoney(nextMoney);
-    dbService.updateGameState(userId, {
-      money: nextMoney,
-      ownedBuildings: nextBuildings,
-    });
-    Alert.alert('건물 구매 완료', `${buildingName}을(를) 보관함에 추가했습니다.`);
-  };
-
   const handleCompleteCharacterSurvey = async (
     gender: PlayerGender,
     travelStyle: TravelStyle,
     nextAvatarId: AvatarId
   ) => {
+    if (editingCharacter && nextAvatarId !== avatarId) {
+      if (money < CHANGE_SERVICE_PRICE) {
+        Alert.alert('골드가 부족해요', `캐릭터 변경에는 ${CHANGE_SERVICE_PRICE}G가 필요합니다.`);
+        return;
+      }
+      const nextMoney = money - CHANGE_SERVICE_PRICE;
+      setMoney(nextMoney);
+      await dbService.updateGameState(userId, { money: nextMoney });
+    }
     await dbService.updatePlayerProfile(userId, gender, travelStyle, nextAvatarId);
     setAvatarId(nextAvatarId);
     setCharacterSurveyVisible(false);
@@ -530,6 +692,15 @@ function GameApp({ session }: { session: Session }) {
   };
 
   const handleCompletePetSurvey = async (nextPetId: PetId) => {
+    if (editingPet && nextPetId !== petId) {
+      if (money < CHANGE_SERVICE_PRICE) {
+        Alert.alert('골드가 부족해요', `동행 친구 변경에는 ${CHANGE_SERVICE_PRICE}G가 필요합니다.`);
+        return;
+      }
+      const nextMoney = money - CHANGE_SERVICE_PRICE;
+      setMoney(nextMoney);
+      await dbService.updateGameState(userId, { money: nextMoney });
+    }
     await dbService.updatePet(userId, nextPetId);
     setPetId(nextPetId);
     setPetSurveyVisible(false);
@@ -607,6 +778,8 @@ function GameApp({ session }: { session: Session }) {
               petId={petId}
               dpadScale={dpadScale}
               menuButtonScale={menuButtonScale}
+              waterCooldownReductionMs={waterCooldownReductionMs}
+              sunCooldownReductionMs={sunCooldownReductionMs}
               onWater={handleWater}
               onSun={handleSun}
               onHarvest={handleHarvest}
@@ -615,7 +788,7 @@ function GameApp({ session }: { session: Session }) {
               onGoEncyclopedia={() => setActiveTab('encyclopedia')}
               onSellHarvestedCrop={handleSellHarvestedCrop}
               onBuySeed={handleBuySeed}
-              onBuyBuilding={handleBuyBuilding}
+              onBuyCareCooldownUpgrade={handleBuyCareCooldownUpgrade}
               onChangeCharacter={() => {
                 setEditingCharacter(true);
                 setCharacterSurveyVisible(true);
@@ -626,7 +799,12 @@ function GameApp({ session }: { session: Session }) {
               }}
               onChangeFarmName={handleChangeFarmName}
               onControlSettingsChange={(settings) =>
-                handleControlSettingsChange({ ...settings, farmName })
+                handleControlSettingsChange({
+                  ...settings,
+                  farmName,
+                  waterCooldownReductionMs,
+                  sunCooldownReductionMs,
+                })
               }
               onLogout={handleLogout}
             />
@@ -638,6 +816,8 @@ function GameApp({ session }: { session: Session }) {
               onCheckIn={handleCheckIn}
               gpsStatusText={gpsStatusText}
               isGpsLoading={gpsLoading || loading}
+              exploreRadiusMeters={exploreRadiusMeters}
+              onExploreRadiusChange={handleExploreRadiusChange}
               onRefreshNearby={() => loadGpsTouristSpots(touristSpots)}
             />
           )}
@@ -653,13 +833,6 @@ function GameApp({ session }: { session: Session }) {
           spot={selectedSpotForCheckIn}
           onClose={() => setCheckInModalVisible(false)}
           onGoToGarden={() => setActiveTab('garden')}
-        />
-
-        <HarvestModal
-          visible={harvestModalVisible}
-          plant={harvestedPlant}
-          onClose={() => setHarvestModalVisible(false)}
-          onGoToEncyclopedia={() => setActiveTab('encyclopedia')}
         />
 
         <Modal

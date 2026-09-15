@@ -7,30 +7,43 @@ import {
   Linking,
   ScrollView,
   TouchableOpacity,
-  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TouristSpot } from '../types';
+import { SeedVisual } from './SeedVisual';
 
 interface ExploreTabProps {
   touristSpots: TouristSpot[];
   onCheckIn: (spot: TouristSpot) => void | Promise<void>;
   gpsStatusText: string;
   isGpsLoading: boolean;
+  exploreRadiusMeters: number;
+  onExploreRadiusChange: (radiusMeters: number) => void;
   onRefreshNearby: () => void;
 }
 
 type ExploreMode = NonNullable<TouristSpot['discoveryType']>;
+const RADIUS_OPTIONS = [1000, 3000, 5000, 10000, 20000];
+const formatRadiusLabel = (radiusMeters: number) => `${Math.round(radiusMeters / 1000)}km`;
 
 export const ExploreTab: React.FC<ExploreTabProps> = ({
   touristSpots,
   onCheckIn,
   gpsStatusText,
   isGpsLoading,
+  exploreRadiusMeters,
+  onExploreRadiusChange,
   onRefreshNearby,
 }) => {
   const [exploreMode, setExploreMode] = useState<ExploreMode>('popular');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const modeCounts = touristSpots.reduce<Record<ExploreMode, number>>(
+    (counts, spot) => {
+      const spotMode = spot.discoveryType ?? 'hiddenDiscovery';
+      counts[spotMode] += 1;
+      return counts;
+    },
+    { popular: 0, nearPopular: 0, hiddenDiscovery: 0 }
+  );
 
   const openGoogleMapsRoute = (spot: TouristSpot) => {
     const destination =
@@ -43,13 +56,12 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
 
   const filteredSpots = touristSpots.filter((spot) => {
     const spotMode = spot.discoveryType ?? 'hiddenDiscovery';
-    const matchesMode = spotMode === exploreMode;
-    const matchesSearch =
-      spot.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      spot.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      spot.seedName.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesMode && matchesSearch;
+    return spotMode === exploreMode;
   });
+  const hasGeminiScores = (spot: TouristSpot) =>
+    spot.popularityScore !== undefined ||
+    spot.besidePopularScore !== undefined ||
+    spot.hiddenScore !== undefined;
 
   const modeTitleMap: Record<ExploreMode, string> = {
     popular: '인기 명소',
@@ -84,7 +96,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
               color={exploreMode === 'popular' ? '#FFF8D9' : '#6B4A23'}
             />
             <Text style={[styles.modeTabText, exploreMode === 'popular' && styles.modeTabTextActive]}>
-              인기 명소
+              인기 명소 {modeCounts.popular}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -97,7 +109,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
               color={exploreMode === 'nearPopular' ? '#FFF8D9' : '#6B4A23'}
             />
             <Text style={[styles.modeTabText, exploreMode === 'nearPopular' && styles.modeTabTextActive]}>
-              명소 옆
+              명소 옆 {modeCounts.nearPopular}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -110,25 +122,9 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
               color={exploreMode === 'hiddenDiscovery' ? '#FFF8D9' : '#6B4A23'}
             />
             <Text style={[styles.modeTabText, exploreMode === 'hiddenDiscovery' && styles.modeTabTextActive]}>
-              숨은 발견
+              숨은 발견 {modeCounts.hiddenDiscovery}
             </Text>
           </TouchableOpacity>
-        </View>
-
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={18} color="#6B4A23" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="관광지, 지역, 씨앗 찾기"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor="#9C7A44"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={18} color="#8A5A2B" />
-            </TouchableOpacity>
-          )}
         </View>
 
         <View style={styles.gpsPanel}>
@@ -142,6 +138,30 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
             <Ionicons name="refresh" size={15} color="#FFF8D9" />
             <Text style={styles.refreshBtnText}>새로고침</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.radiusPanel}>
+          <View style={styles.radiusTitleRow}>
+            <Ionicons name="radio-button-on" size={15} color="#2D6840" />
+            <Text style={styles.radiusTitle}>탐험 거리</Text>
+          </View>
+          <View style={styles.radiusOptions}>
+            {RADIUS_OPTIONS.map((radius) => {
+              const isActive = radius === exploreRadiusMeters;
+              return (
+                <TouchableOpacity
+                  key={radius}
+                  style={[styles.radiusChip, isActive && styles.radiusChipActive]}
+                  onPress={() => onExploreRadiusChange(radius)}
+                  disabled={isGpsLoading}
+                >
+                  <Text style={[styles.radiusChipText, isActive && styles.radiusChipTextActive]}>
+                    {formatRadiusLabel(radius)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
       </View>
@@ -203,13 +223,29 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                 <Text style={styles.spotTitle}>{spot.title}</Text>
                 <Text style={styles.spotAddress}>{spot.address}</Text>
                 <Text style={styles.spotDesc}>{spot.description}</Text>
+                {hasGeminiScores(spot) && (
+                  <View style={styles.scoreRow}>
+                    <View style={styles.scoreChip}>
+                      <Text style={styles.scoreLabel}>유명도</Text>
+                      <Text style={styles.scoreValue}>{spot.popularityScore ?? 0}</Text>
+                    </View>
+                    <View style={styles.scoreChip}>
+                      <Text style={styles.scoreLabel}>명소옆</Text>
+                      <Text style={styles.scoreValue}>{spot.besidePopularScore ?? 0}</Text>
+                    </View>
+                    <View style={styles.scoreChip}>
+                      <Text style={styles.scoreLabel}>숨은</Text>
+                      <Text style={styles.scoreValue}>{spot.hiddenScore ?? 0}</Text>
+                    </View>
+                  </View>
+                )}
               </View>
             </View>
 
             <View style={styles.rewardBox}>
               <View style={styles.rewardLeft}>
                 <View style={styles.rewardSeedBubble}>
-                  <Text style={styles.rewardEmoji}>{spot.seedEmoji}</Text>
+                  <SeedVisual visual={spot.seedVisual} emoji={spot.seedEmoji} size={48} />
                 </View>
                 <View style={styles.rewardTextBlock}>
                   <Text style={styles.rewardLabel}>의뢰 보상</Text>
@@ -252,8 +288,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
             </View>
             <Text style={styles.emptyTitle}>GPS 기반 관광지가 아직 없어요</Text>
             <Text style={styles.emptyText}>
-              위치 권한을 허용하고 새로고침을 눌러주세요. 기본으로 세팅된 장소는 표시하지 않고,
-              현재 위치 주변 TourAPI 결과를 Gemini가 분류한 장소만 보여줍니다.
+              위치 권한을 허용하고 새로고침을 눌러주세요. 현재 위치 주변 TourAPI 결과를 Gemini가 분류한 장소만 보여줍니다.
             </Text>
             <TouchableOpacity style={styles.emptyButton} onPress={onRefreshNearby}>
               <Ionicons name="refresh" size={15} color="#FFF8D9" />
@@ -306,24 +341,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#DCEEC5',
     marginTop: 4,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF8D9',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: '#D5B66E',
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    color: '#3D321F',
-    marginLeft: 8,
-    fontWeight: '700',
   },
   modeTabs: {
     flexDirection: 'row',
@@ -400,6 +417,54 @@ const styles = StyleSheet.create({
   refreshBtnText: {
     fontSize: 11,
     fontWeight: '900',
+    color: '#FFF8D9',
+  },
+  radiusPanel: {
+    backgroundColor: '#FFF8D9',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#D5B66E',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  radiusTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  radiusTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#24492E',
+  },
+  radiusOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  radiusChip: {
+    minWidth: 54,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F6E8B7',
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#D5B66E',
+    paddingHorizontal: 10,
+  },
+  radiusChipActive: {
+    backgroundColor: '#2D6840',
+    borderColor: '#1F4E31',
+  },
+  radiusChipText: {
+    fontSize: 12,
+    color: '#6B4A23',
+    fontWeight: '900',
+  },
+  radiusChipTextActive: {
     color: '#FFF8D9',
   },
   listContent: {
@@ -575,6 +640,34 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 12,
     fontWeight: '600',
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: -4,
+    marginBottom: 12,
+  },
+  scoreChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFF3C4',
+    borderWidth: 1,
+    borderColor: '#D9B66F',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  scoreLabel: {
+    fontSize: 10,
+    color: '#7A4A18',
+    fontWeight: '800',
+  },
+  scoreValue: {
+    fontSize: 11,
+    color: '#2D6840',
+    fontWeight: '900',
   },
   rewardBox: {
     backgroundColor: '#F2E0A8',

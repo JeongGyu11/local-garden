@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TouristSpot } from '../types';
+import { SeedVisual } from './SeedVisual';
 
 interface CheckInModalProps {
   visible: boolean;
@@ -45,7 +46,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
 
           {/* 획득 씨앗 박스 */}
           <View style={styles.seedBox}>
-            <Text style={styles.seedEmoji}>{spot.seedEmoji}</Text>
+            <SeedVisual visual={spot.seedVisual} emoji={spot.seedEmoji} size={58} />
             <View style={styles.seedTextCol}>
               <Text style={styles.seedObtainedLabel}>새로운 특산 씨앗 획득!</Text>
               <Text style={styles.seedName}>{spot.seedName}</Text>

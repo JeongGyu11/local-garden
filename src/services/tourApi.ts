@@ -1,4 +1,4 @@
-import { TouristSpot } from '../types';
+import { SeedVisual, TouristSpot } from '../types';
 import { curateTouristSpotsWithGemini } from './geminiApi';
 
 declare const process: {
@@ -128,6 +128,31 @@ const isPopularSpot = (title: string) =>
 const isTooSmallPlace = (title: string, address: string) =>
   SMALL_PLACE_KEYWORDS.some((keyword) => title.includes(keyword) || address.includes(keyword));
 
+const REPRESENTATIVE_SPOT_KEYWORDS = [
+  '궁',
+  '성',
+  '산',
+  '해변',
+  '해수욕장',
+  '공원',
+  '수목원',
+  '휴양림',
+  '마을',
+  '한옥',
+  '시장',
+  '거리',
+  '문화',
+  '예술',
+  '미술관',
+  '박물관',
+  '전망대',
+  '타워',
+  '랜드',
+  '타운',
+  '항',
+  '등대',
+];
+
 const getCategoryLabel = (item: TourApiRawItem) => {
   const categoryCode = item.cat2 || item.cat1 || item.cat3 || '';
   return CATEGORY_LABELS[categoryCode] ?? '숨은 관광지';
@@ -141,6 +166,82 @@ const createSeedNameFromTitle = (title: string, fallbackSeedName: string) => {
     .trim();
   const seedBase = (cleanedTitle || title).replace(/\s+/g, '').slice(0, 8);
   return seedBase ? `${seedBase} 씨앗` : fallbackSeedName;
+};
+
+const getDefaultSeedVisual = (category: string, title: string, address: string): SeedVisual => {
+  const text = `${category} ${title} ${address}`;
+
+  if (/해변|바다|항구|섬|등대|수변|호수|강/.test(text)) {
+    return {
+      theme: 'sea',
+      primaryColor: '#2F8FBD',
+      secondaryColor: '#9CE3F0',
+      accentColor: '#FFF2C6',
+      pattern: 'wave',
+    };
+  }
+  if (/산|봉|계곡|둘레길|숲길|전망|고개/.test(text)) {
+    return {
+      theme: 'mountain',
+      primaryColor: '#4F6F3A',
+      secondaryColor: '#A8B56F',
+      accentColor: '#E2D4B5',
+      pattern: 'stone',
+    };
+  }
+  if (/자연|생태|공원|수목원|정원|휴양림|습지|숲/.test(text)) {
+    return {
+      theme: 'nature',
+      primaryColor: '#3E7A3B',
+      secondaryColor: '#9BCB68',
+      accentColor: '#E6F5C9',
+      pattern: 'leaf',
+    };
+  }
+  if (/역사|전통|문화재|사찰|성|궁|향교|고택|한옥/.test(text)) {
+    return {
+      theme: 'history',
+      primaryColor: '#8A5A2B',
+      secondaryColor: '#2F4F4F',
+      accentColor: '#D9B66F',
+      pattern: 'tile',
+    };
+  }
+  if (/문화|미술|예술|전시|공방|박물관|갤러리|공연/.test(text)) {
+    return {
+      theme: 'art',
+      primaryColor: '#7C3AED',
+      secondaryColor: '#F59E0B',
+      accentColor: '#EC4899',
+      pattern: 'paint',
+    };
+  }
+  if (/시장|거리|골목|먹자|상가|음식|맛집/.test(text)) {
+    return {
+      theme: 'market',
+      primaryColor: '#C65D1E',
+      secondaryColor: '#F2B84B',
+      accentColor: '#7A2E17',
+      pattern: 'spice',
+    };
+  }
+  if (/축제|행사|체험/.test(text)) {
+    return {
+      theme: 'festival',
+      primaryColor: '#D946EF',
+      secondaryColor: '#38BDF8',
+      accentColor: '#FDE047',
+      pattern: 'sparkle',
+    };
+  }
+
+  return {
+    theme: 'local',
+    primaryColor: '#6E9F44',
+    secondaryColor: '#F2D36B',
+    accentColor: '#FFF8D9',
+    pattern: 'leaf',
+  };
 };
 
 const toNumber = (value: string | number | undefined) => {
@@ -164,6 +265,7 @@ const toTouristSpot = (item: TourApiRawItem, config: RegionConfig): TouristSpot 
     address,
     seedName: createSeedNameFromTitle(title, config.seedName),
     seedEmoji: config.seedEmoji,
+    seedVisual: getDefaultSeedVisual(category, title, address),
     description: `${config.region}의 덜 알려진 ${category}입니다. 방문 인증을 완료하면 지역 특산 씨앗을 받을 수 있어요.`,
     visited: false,
     distance: 'GPS 인증 가능',
@@ -208,6 +310,70 @@ const filterTouristCandidates = (items: TourApiRawItem[]) =>
       return scoreHiddenSpot(b) - scoreHiddenSpot(a);
     });
 
+const createDistanceBuckets = (radiusMeters: number) => {
+  const buckets = [
+    { min: 0, max: 1000 },
+    { min: 1000, max: 3000 },
+    { min: 3000, max: 5000 },
+    { min: 5000, max: 10000 },
+    { min: 10000, max: 20000 },
+  ];
+
+  return buckets.filter((bucket) => bucket.min < radiusMeters).reverse();
+};
+
+const getMaxSpotCount = (radiusMeters: number) => {
+  if (radiusMeters <= 1000) return 9;
+  if (radiusMeters <= 3000) return 12;
+  if (radiusMeters <= 5000) return 15;
+  if (radiusMeters <= 10000) return 20;
+  return 25;
+};
+
+const selectDistanceSpreadCandidates = (
+  items: TourApiRawItem[],
+  radiusMeters: number,
+  maxItems = getMaxSpotCount(radiusMeters)
+) => {
+  const selected = new Map<string, TourApiRawItem>();
+  const getKey = (item: TourApiRawItem) => String(item.contentid ?? `${item.title}_${item.addr1}`);
+  const sortedItems = filterTouristCandidates(items);
+  const buckets = createDistanceBuckets(radiusMeters);
+  const baseBucketLimit = Math.max(2, Math.floor(maxItems / Math.max(1, buckets.length)));
+  const remainder = maxItems % Math.max(1, buckets.length);
+
+  buckets.forEach((bucket, bucketIndex) => {
+    const bucketLimit = baseBucketLimit + (bucketIndex < remainder ? 1 : 0);
+    sortedItems
+      .filter((item) => {
+        const distanceMeters = getTourApiDistance(item);
+        return (
+          distanceMeters !== undefined &&
+          distanceMeters >= bucket.min &&
+          distanceMeters < Math.min(bucket.max, radiusMeters)
+        );
+      })
+      .slice(0, bucketLimit)
+      .forEach((item) => {
+        if (selected.size < maxItems) {
+          selected.set(getKey(item), item);
+        }
+      });
+  });
+
+  sortedItems.forEach((item) => {
+    if (selected.size < maxItems) {
+      selected.set(getKey(item), item);
+    }
+  });
+
+  return Array.from(selected.values()).sort((a, b) => {
+    const distanceA = getTourApiDistance(a) ?? Number.POSITIVE_INFINITY;
+    const distanceB = getTourApiDistance(b) ?? Number.POSITIVE_INFINITY;
+    return distanceA - distanceB;
+  });
+};
+
 const getRegionConfigFromAddress = (address: string): RegionConfig => {
   if (address.includes('제주')) {
     return REGION_CONFIGS[0];
@@ -237,27 +403,137 @@ const formatDistance = (meters: number | undefined) => {
   return `현재 위치에서 ${(meters / 1000).toFixed(1)}km`;
 };
 
-const toLocalDiscoveryType = (
-  spot: TouristSpot,
-  distanceMeters: number | undefined
-): NonNullable<TouristSpot['discoveryType']> => {
-  if (isPopularSpot(spot.title)) {
-    return 'popular';
-  }
-  if (distanceMeters !== undefined && distanceMeters <= 5000) {
-    return 'nearPopular';
-  }
-  return 'hiddenDiscovery';
-};
-
 const getDefaultDescription = (discoveryType: NonNullable<TouristSpot['discoveryType']>) => {
   if (discoveryType === 'popular') {
-    return '현재 GPS 주변의 대표 명소로 추정되는 TourAPI 관광지입니다.';
+    return '실제로 많이 알려진 대표 명소로 분류된 TourAPI 관광지입니다.';
   }
   if (discoveryType === 'nearPopular') {
-    return '현재 위치의 인기 동선에 붙여 방문하기 좋은 주변 관광지입니다.';
+    return '유명 명소 근처에 있지만 상대적으로 덜 알려진 주변 관광지입니다.';
   }
-  return '인기 명소와 조금 떨어져 존재를 알리기 좋은 숨은 관광지 후보입니다.';
+  return '유명 명소 동선과 조금 떨어진 사람들이 잘 모를 만한 숨은 관광지 후보입니다.';
+};
+
+const getSpotDistanceMeters = (from: TouristSpot, to: TouristSpot) => {
+  if (
+    from.latitude === undefined ||
+    from.longitude === undefined ||
+    to.latitude === undefined ||
+    to.longitude === undefined
+  ) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const earthRadiusMeters = 6371000;
+  const toRadians = (degree: number) => (degree * Math.PI) / 180;
+  const dLat = toRadians(to.latitude - from.latitude);
+  const dLon = toRadians(to.longitude - from.longitude);
+  const lat1 = toRadians(from.latitude);
+  const lat2 = toRadians(to.latitude);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const findNearestPopularAnchor = (spot: TouristSpot, popularAnchors: TouristSpot[]) =>
+  popularAnchors
+    .map((anchor) => ({ anchor, distance: getSpotDistanceMeters(anchor, spot) }))
+    .sort((a, b) => a.distance - b.distance)[0];
+
+const getRepresentativeSpotScore = (spot: TouristSpot, index: number) => {
+  let score = 0;
+  const text = `${spot.title} ${spot.category} ${spot.address}`;
+
+  if (isPopularSpot(spot.title)) {
+    score += 120;
+  }
+  if (spot.discoveryType === 'popular') {
+    score += 100;
+  }
+  if (spot.imageUrl) {
+    score += 12;
+  }
+  if (/자연|역사|문화|체험|휴양|생태/.test(spot.category)) {
+    score += 10;
+  }
+  if (REPRESENTATIVE_SPOT_KEYWORDS.some((keyword) => text.includes(keyword))) {
+    score += 18;
+  }
+  if (isTooSmallPlace(spot.title, spot.address)) {
+    score -= 60;
+  }
+
+  return score - index * 0.2;
+};
+
+const getPopularAnchors = (spots: TouristSpot[]) => {
+  const strictAnchors = spots.filter(
+    (spot) => isPopularSpot(spot.title) || spot.discoveryType === 'popular'
+  );
+
+  if (strictAnchors.length > 0) {
+    return strictAnchors;
+  }
+
+  const representativeFallback = spots
+    .map((spot, index) => ({
+      spot,
+      score: getRepresentativeSpotScore(spot, index),
+    }))
+    .filter(({ spot }) => !isTooSmallPlace(spot.title, spot.address))
+    .sort((a, b) => b.score - a.score)[0]?.spot;
+
+  return representativeFallback ? [representativeFallback] : [];
+};
+
+const applyFamousAnchorDiscoveryRules = (spots: TouristSpot[]) => {
+  if (spots.length === 0) {
+    return spots;
+  }
+
+  const nextSpots = spots.map((spot) => ({ ...spot }));
+  const popularAnchors = getPopularAnchors(nextSpots);
+  const maxNearPopular = Math.min(4, Math.max(2, Math.ceil(nextSpots.length * 0.2)));
+  let nearPopularCount = 0;
+
+  return nextSpots.map((spot) => {
+    if (popularAnchors.some((anchor) => anchor.id === spot.id)) {
+      return {
+        ...spot,
+        discoveryType: 'popular' as const,
+        anchorName: undefined,
+        description:
+          spot.description && spot.description !== getDefaultDescription('nearPopular')
+            ? spot.description
+            : getDefaultDescription('popular'),
+      };
+    }
+
+    const nearestPopular = findNearestPopularAnchor(spot, popularAnchors);
+    const isBesidePopular =
+      nearestPopular &&
+      Number.isFinite(nearestPopular.distance) &&
+      nearestPopular.distance <= 3000 &&
+      nearPopularCount < maxNearPopular;
+
+    if (isBesidePopular) {
+      nearPopularCount += 1;
+      return {
+        ...spot,
+        discoveryType: 'nearPopular' as const,
+        anchorName: nearestPopular.anchor.title,
+        description: `${nearestPopular.anchor.title} 근처의 상대적으로 덜 알려진 장소입니다.`,
+      };
+    }
+
+    return {
+      ...spot,
+      discoveryType: 'hiddenDiscovery' as const,
+      anchorName: undefined,
+      description: getDefaultDescription('hiddenDiscovery'),
+    };
+  });
 };
 
 export async function fetchNearbyHiddenTouristSpots(
@@ -266,7 +542,7 @@ export async function fetchNearbyHiddenTouristSpots(
   radiusMeters = 20000
 ): Promise<TouristSpot[]> {
   const url = buildTourApiUrl('locationBasedList2', {
-    numOfRows: '30',
+    numOfRows: '300',
     pageNo: '1',
     arrange: 'E',
     contentTypeId: '12',
@@ -287,25 +563,26 @@ export async function fetchNearbyHiddenTouristSpots(
   }
 
   const items = toArray(json?.response?.body?.items?.item);
-  const spots = filterTouristCandidates(items)
-    .slice(0, 18)
+  const spots = selectDistanceSpreadCandidates(items, radiusMeters)
     .map((item) => {
       const config = getRegionConfigFromAddress(item.addr1 ?? '');
       const spot = toTouristSpot(item, config);
       const distanceMeters = getTourApiDistance(item);
-      const discoveryType = toLocalDiscoveryType(spot, distanceMeters);
+      const discoveryType = isPopularSpot(spot.title)
+        ? ('popular' as const)
+        : ('hiddenDiscovery' as const);
       return {
         ...spot,
         discoveryType,
         distance: formatDistance(distanceMeters),
         description: getDefaultDescription(discoveryType),
       };
-    });
+  });
 
   try {
     return await curateTouristSpotsWithGemini(spots);
   } catch (geminiErr) {
     console.warn('Gemini tourist spot curation failed:', geminiErr);
-    return spots;
+    return applyFamousAnchorDiscoveryRules(spots);
   }
 }

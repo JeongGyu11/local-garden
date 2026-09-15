@@ -54,7 +54,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
   const [checking, setChecking] = useState(true);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
-  const [signingInWith, setSigningInWith] = useState<'google' | 'apple' | 'kakao' | null>(null);
+  const [signingInWith, setSigningInWith] = useState<'google' | 'kakao' | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -71,21 +71,13 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
         }
       }
 
-      const [seen, sessionResult] = await Promise.all([
-        AsyncStorage.getItem(ONBOARDING_KEY),
-        supabase.auth.getSession(),
-      ]);
+      const seen = await AsyncStorage.getItem(ONBOARDING_KEY);
+      await supabase.auth.signOut();
 
       if (!mounted) return;
 
-      const currentSession = sessionResult.data.session;
-      setSession(currentSession);
-      if (currentSession) {
-        await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-        setOnboardingComplete(true);
-      } else {
-        setOnboardingComplete(seen === 'true');
-      }
+      setSession(null);
+      setOnboardingComplete(seen === 'true');
       setChecking(false);
     }
 
@@ -112,7 +104,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
     setOnboardingComplete(true);
   };
 
-  const signInWithOAuth = async (provider: Extract<Provider, 'google' | 'apple' | 'kakao'>) => {
+  const signInWithOAuth = async (provider: Extract<Provider, 'google' | 'kakao'>) => {
     setSigningInWith(provider);
     try {
       const redirectTo =
@@ -208,21 +200,6 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.appleButton, signingInWith !== null && styles.disabledButton]}
-            onPress={() => signInWithOAuth('apple')}
-            disabled={signingInWith !== null}
-          >
-            {signingInWith === 'apple' ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <>
-                <Ionicons name="logo-apple" size={22} color="#FFFFFF" />
-                <Text style={styles.appleButtonText}>Apple로 계속하기</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
             style={[styles.kakaoButton, signingInWith !== null && styles.disabledButton]}
             onPress={() => signInWithOAuth('kakao')}
             disabled={signingInWith !== null}
@@ -271,8 +248,6 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.6 },
   googleMark: { fontSize: 21, fontWeight: '900', color: '#4285F4' },
   googleButtonText: { fontSize: 16, fontWeight: '800', color: '#334155' },
-  appleButton: { width: '100%', height: 56, marginTop: 12, borderRadius: 14, backgroundColor: '#111111', borderWidth: 2, borderColor: '#111111', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
-  appleButtonText: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
   kakaoButton: { width: '100%', height: 56, marginTop: 12, borderRadius: 14, backgroundColor: '#FEE500', borderWidth: 2, borderColor: '#E6CF00', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
   kakaoMark: { fontSize: 17, fontWeight: '900', color: '#191919' },
   kakaoButtonText: { fontSize: 16, fontWeight: '800', color: '#191919' },
