@@ -63,10 +63,10 @@ interface Plot extends MapPoint {
 }
 
 const PLOTS: Plot[] = [
-  { id: 0, x: 38, y: 40, label: '1번 밭' },
-  { id: 1, x: 62, y: 40, label: '2번 밭' },
-  { id: 2, x: 38, y: 65, label: '3번 밭' },
-  { id: 3, x: 62, y: 65, label: '4번 밭' },
+  { id: 0, x: 24, y: 48, label: '1번 밭' },
+  { id: 1, x: 76, y: 48, label: '2번 밭' },
+  { id: 2, x: 24, y: 72, label: '3번 밭' },
+  { id: 3, x: 76, y: 72, label: '4번 밭' },
 ];
 
 const SHOP = { x: 82, y: 31, emoji: '🏪', label: '상점' };
@@ -541,6 +541,142 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
         style={[styles.mapCanvas, { minHeight: mapMinHeight }]}
         onLayout={handleMapLayout}
       >
+        {/* === 스타듀밸리 조약돌/흙길 산책로 (Cobblestone Paths) === */}
+        <View style={styles.horizontalPath} pointerEvents="none">
+          <View style={styles.pathBorderTop} />
+          <View style={styles.pathBorderBottom} />
+          <View style={styles.pathStonesRow}>
+            <View style={styles.cobbleDot} />
+            <View style={[styles.cobbleDot, styles.cobbleDotAlt]} />
+            <View style={styles.cobbleDot} />
+            <View style={[styles.cobbleDot, styles.cobbleDotAlt]} />
+            <View style={styles.cobbleDot} />
+            <View style={[styles.cobbleDot, styles.cobbleDotAlt]} />
+          </View>
+        </View>
+        <View style={styles.verticalPath} pointerEvents="none">
+          <View style={styles.pathBorderLeft} />
+          <View style={styles.pathBorderRight} />
+          <View style={styles.verticalStonesCol}>
+            <View style={styles.cobbleDot} />
+            <View style={[styles.cobbleDot, styles.cobbleDotAlt]} />
+            <View style={styles.cobbleDot} />
+            <View style={[styles.cobbleDot, styles.cobbleDotAlt]} />
+            <View style={styles.cobbleDot} />
+          </View>
+        </View>
+
+        {/* === 스타듀밸리 농가 오두막 (Farmhouse Cabin) === */}
+        <View style={styles.farmHouseContainer} pointerEvents="none">
+          {/* 굴뚝 & 모락모락 연기 */}
+          <View style={styles.chimney}>
+            <View style={styles.smokePuff1} />
+            <View style={styles.smokePuff2} />
+          </View>
+
+          {/* 지붕 (Red Terracotta Shingle Roof) */}
+          <View style={styles.houseRoof}>
+            <View style={styles.roofTileRow}>
+              <View style={styles.roofTile} />
+              <View style={styles.roofTile} />
+              <View style={styles.roofTile} />
+              <View style={styles.roofTile} />
+              <View style={styles.roofTile} />
+            </View>
+            <View style={styles.atticWindow}>
+              <View style={styles.atticGlass} />
+            </View>
+          </View>
+          <View style={styles.roofEaves} />
+
+          {/* 오두막 원목 벽체 (Timber Walls) */}
+          <View style={styles.houseBody}>
+            {/* 좌측 창문 */}
+            <View style={styles.houseWindow}>
+              <View style={styles.windowShutterLeft} />
+              <View style={styles.windowGlass} />
+              <View style={styles.windowShutterRight} />
+            </View>
+
+            {/* 원목 현관문 */}
+            <View style={styles.houseDoor}>
+              <View style={styles.doorKnocker} />
+            </View>
+
+            {/* 우측 창문 */}
+            <View style={styles.houseWindow}>
+              <View style={styles.windowShutterLeft} />
+              <View style={styles.windowGlass} />
+              <View style={styles.windowShutterRight} />
+            </View>
+          </View>
+
+          {/* 현관 데크 테라스 & 계단 */}
+          <View style={styles.housePorch}>
+            <View style={styles.porchStep1} />
+            <View style={styles.porchStep2} />
+          </View>
+
+          {/* 마당 디테일: 우편함 & 장작더미 */}
+          <View style={styles.mailbox}>
+            <Text style={{ fontSize: 16 }}>📮</Text>
+          </View>
+          <View style={styles.woodPile}>
+            <Text style={{ fontSize: 15 }}>🪵</Text>
+          </View>
+        </View>
+
+        {/* === 맵 조경: 숲, 울타리, 꽃밭, 우물 === */}
+        {/* 상단 좌측 숲 & 통나무 울타리 */}
+        <View style={styles.topForestLeft} pointerEvents="none">
+          <Text style={styles.treeBig}>🌲</Text>
+          <Text style={styles.treeMedium}>🌳</Text>
+          <View style={styles.fenceRow}>
+            <Text style={styles.fenceItem}>🪵</Text>
+            <Text style={styles.fenceItem}>🪵</Text>
+          </View>
+        </View>
+
+        {/* 상단 우측 숲 & 울타리 */}
+        <View style={styles.topForestRight} pointerEvents="none">
+          <Text style={styles.treeBig}>🌳</Text>
+          <Text style={styles.treeCherry}>🌸</Text>
+          <Text style={styles.treeMedium}>🌲</Text>
+          <View style={styles.fenceRow}>
+            <Text style={styles.fenceItem}>🪵</Text>
+            <Text style={styles.fenceItem}>🪵</Text>
+          </View>
+        </View>
+
+        {/* 좌측 꽃밭 & 양봉 상자 (Flower Garden & Beehive) */}
+        <View style={styles.flowerGardenArea} pointerEvents="none">
+          <View style={styles.flowerPatch}>
+            <Text style={styles.flowerItem}>🌷</Text>
+            <Text style={styles.flowerItem}>🌻</Text>
+            <Text style={styles.flowerItem}>🌸</Text>
+          </View>
+          <Text style={styles.beehiveItem}>🐝</Text>
+        </View>
+
+        {/* 우측 돌 우물 & 물통 (Stone Well & Water Trough) */}
+        <View style={styles.wellUtilityArea} pointerEvents="none">
+          <Text style={styles.wellEmoji}>⛲</Text>
+          <View style={styles.barrelRow}>
+            <Text style={styles.barrelEmoji}>🪣</Text>
+            <Text style={styles.barrelEmoji}>📦</Text>
+          </View>
+        </View>
+
+        {/* 밭을 지키는 귀여운 허수아비들 (Scarecrows) */}
+        <View style={styles.scarecrowLeft} pointerEvents="none">
+          <Text style={styles.scarecrowEmoji}>🎎</Text>
+          <View style={styles.scarecrowShadow} />
+        </View>
+        <View style={styles.scarecrowRight} pointerEvents="none">
+          <Text style={styles.scarecrowEmoji}>🎎</Text>
+          <View style={styles.scarecrowShadow} />
+        </View>
+
         {placedPlots.map((plot, index) => {
           const crop = plants[index];
           const isTargeted = nearbyPlotIndex === index;
@@ -1046,8 +1182,373 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: '#7BBF70',
+    backgroundColor: '#5A8F3D',
   },
+  /* === 스타듀밸리 조약돌/흙길 산책로 (Cobblestone Paths) === */
+  horizontalPath: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '32%',
+    height: 52,
+    backgroundColor: '#CFA055',
+    zIndex: 2,
+    justifyContent: 'center',
+  },
+  pathBorderTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#A07432',
+  },
+  pathBorderBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#A07432',
+  },
+  pathStonesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 20,
+  },
+  verticalPath: {
+    position: 'absolute',
+    left: '42%',
+    width: '16%',
+    top: '20%',
+    bottom: 0,
+    backgroundColor: '#CFA055',
+    zIndex: 2,
+    alignItems: 'center',
+  },
+  pathBorderLeft: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: 3,
+    backgroundColor: '#A07432',
+  },
+  pathBorderRight: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: 3,
+    backgroundColor: '#A07432',
+  },
+  verticalStonesCol: {
+    paddingVertical: 24,
+    gap: 36,
+    alignItems: 'center',
+  },
+  cobbleDot: {
+    width: 8,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(138,97,36,0.4)',
+  },
+  cobbleDotAlt: {
+    width: 12,
+    height: 7,
+    borderRadius: 3,
+    backgroundColor: 'rgba(235,206,146,0.5)',
+  },
+
+  /* === 스타듀밸리 농가 오두막 (Farmhouse Cabin) === */
+  farmHouseContainer: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -105,
+    top: '3%',
+    width: 210,
+    height: 155,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  chimney: {
+    position: 'absolute',
+    right: 24,
+    top: 2,
+    width: 20,
+    height: 32,
+    backgroundColor: '#8C3826',
+    borderWidth: 2,
+    borderColor: '#4A1C12',
+    zIndex: 11,
+  },
+  smokePuff1: {
+    position: 'absolute',
+    top: -10,
+    left: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+  },
+  smokePuff2: {
+    position: 'absolute',
+    top: -18,
+    left: 8,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+  },
+  houseRoof: {
+    width: 200,
+    height: 64,
+    backgroundColor: '#B53E2B',
+    borderWidth: 3,
+    borderColor: '#541B12',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+  },
+  roofTileRow: {
+    position: 'absolute',
+    bottom: 8,
+    left: 10,
+    right: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  roofTile: {
+    width: 28,
+    height: 4,
+    backgroundColor: '#8C2E1F',
+    borderRadius: 2,
+  },
+  atticWindow: {
+    width: 22,
+    height: 20,
+    borderRadius: 4,
+    backgroundColor: '#541B12',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -4,
+  },
+  atticGlass: {
+    width: 16,
+    height: 14,
+    borderRadius: 2,
+    backgroundColor: '#FFE57F',
+  },
+  roofEaves: {
+    width: 208,
+    height: 7,
+    backgroundColor: '#6D2B1E',
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+    zIndex: 13,
+  },
+  houseBody: {
+    width: 184,
+    height: 58,
+    backgroundColor: '#E5A55B',
+    borderWidth: 3,
+    borderColor: '#6C3A16',
+    borderTopWidth: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'flex-end',
+    paddingBottom: 4,
+    zIndex: 11,
+  },
+  houseWindow: {
+    width: 32,
+    height: 28,
+    backgroundColor: '#6C3A16',
+    borderRadius: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  windowShutterLeft: {
+    width: 4,
+    height: '90%',
+    backgroundColor: '#8B4513',
+    marginRight: 1,
+  },
+  windowGlass: {
+    width: 20,
+    height: '90%',
+    backgroundColor: '#FEF08A',
+    borderRadius: 2,
+  },
+  windowShutterRight: {
+    width: 4,
+    height: '90%',
+    backgroundColor: '#8B4513',
+    marginLeft: 1,
+  },
+  houseDoor: {
+    width: 32,
+    height: 48,
+    backgroundColor: '#7A3F1B',
+    borderWidth: 2,
+    borderColor: '#4A230D',
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doorKnocker: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FDE047',
+  },
+  housePorch: {
+    width: 196,
+    height: 18,
+    backgroundColor: '#B46B2C',
+    borderWidth: 2,
+    borderColor: '#542E10',
+    alignItems: 'center',
+    zIndex: 12,
+  },
+  porchStep1: {
+    width: 60,
+    height: 5,
+    backgroundColor: '#985820',
+  },
+  porchStep2: {
+    width: 72,
+    height: 6,
+    backgroundColor: '#7A4315',
+    marginTop: 2,
+  },
+  mailbox: {
+    position: 'absolute',
+    right: 2,
+    bottom: -6,
+    zIndex: 15,
+  },
+  woodPile: {
+    position: 'absolute',
+    left: 2,
+    bottom: -4,
+    zIndex: 15,
+  },
+
+  /* === 조경: 숲, 울타리, 꽃밭, 우물, 허수아비 === */
+  topForestLeft: {
+    position: 'absolute',
+    left: 10,
+    top: 20,
+    zIndex: 9,
+  },
+  topForestRight: {
+    position: 'absolute',
+    right: 12,
+    top: 18,
+    alignItems: 'flex-end',
+    zIndex: 9,
+  },
+  treeBig: {
+    fontSize: 42,
+    marginBottom: -10,
+  },
+  treeMedium: {
+    fontSize: 34,
+    marginLeft: 14,
+    marginBottom: -6,
+  },
+  treeCherry: {
+    fontSize: 32,
+    marginRight: 10,
+  },
+  fenceRow: {
+    flexDirection: 'row',
+    marginTop: -2,
+  },
+  fenceItem: {
+    fontSize: 18,
+    marginRight: -4,
+    opacity: 0.9,
+  },
+  flowerGardenArea: {
+    position: 'absolute',
+    left: 8,
+    top: '32%',
+    zIndex: 5,
+    alignItems: 'center',
+  },
+  flowerPatch: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(74,124,47,0.5)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  flowerItem: {
+    fontSize: 18,
+    marginHorizontal: 1,
+  },
+  beehiveItem: {
+    fontSize: 20,
+    marginTop: 2,
+  },
+  wellUtilityArea: {
+    position: 'absolute',
+    right: 10,
+    top: '30%',
+    zIndex: 5,
+    alignItems: 'center',
+  },
+  wellEmoji: {
+    fontSize: 34,
+    marginBottom: -4,
+  },
+  barrelRow: {
+    flexDirection: 'row',
+  },
+  barrelEmoji: {
+    fontSize: 18,
+    marginHorizontal: 2,
+  },
+  scarecrowLeft: {
+    position: 'absolute',
+    left: '24%',
+    top: '60%',
+    marginLeft: -15,
+    marginTop: -15,
+    zIndex: 7,
+    alignItems: 'center',
+  },
+  scarecrowRight: {
+    position: 'absolute',
+    left: '76%',
+    top: '60%',
+    marginLeft: -15,
+    marginTop: -15,
+    zIndex: 7,
+    alignItems: 'center',
+  },
+  scarecrowEmoji: {
+    fontSize: 28,
+  },
+  scarecrowShadow: {
+    width: 20,
+    height: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(30,50,20,0.3)',
+    marginTop: -4,
+  },
+
   seedShop: {
     position: 'absolute',
     zIndex: 9,
@@ -1090,35 +1591,35 @@ const styles = StyleSheet.create({
     opacity: 0.82,
   },
   dirtPatch: {
-    width: 96,
-    height: 76,
-    borderRadius: 5,
-    backgroundColor: '#8E5A2B',
-    borderWidth: 4,
-    borderColor: '#68411F',
+    width: 102,
+    height: 80,
+    borderRadius: 6,
+    backgroundColor: '#4A2A14',
+    borderWidth: 3,
+    borderColor: '#78431C',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     shadowColor: '#2B1A0E',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.35,
     shadowRadius: 5,
     elevation: 4,
   },
   soilRow: {
     position: 'absolute',
-    left: 12,
-    right: 12,
+    left: 8,
+    right: 8,
     top: 18,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(82,45,21,0.48)',
+    backgroundColor: '#351D0E',
   },
   soilRowMiddle: {
-    top: 36,
+    top: 38,
   },
   soilRowBottom: {
-    top: 54,
+    top: 58,
   },
   cropDisplay: {
     width: '100%',
