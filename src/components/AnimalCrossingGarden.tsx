@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -636,13 +637,14 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
               <Ionicons name="leaf" size={15} color="#F3F7D5" />
               <Text style={styles.locationText}>{farmName}</Text>
             </View>
-            <Pressable
+            <TouchableOpacity
+              activeOpacity={0.8}
               style={styles.headerShopButton}
               onPress={(event) => handleControlPress(event, () => setShopVisible(true))}
             >
-              <Ionicons name="storefront" size={15} color="#F3F7D5" />
+              <Ionicons name="storefront" size={16} color="#FFF7D6" />
               <Text style={styles.headerShopButtonText}>상점</Text>
-            </Pressable>
+            </TouchableOpacity>
           </View>
           <View style={styles.statCluster}>
             <Text style={styles.statText}>{money}G</Text>
@@ -1422,7 +1424,6 @@ const styles = StyleSheet.create({
   topLeftCluster: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   locationPill: {
     flexDirection: 'row',
@@ -1431,7 +1432,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 5,
-    gap: 6,
     borderWidth: 2,
     borderColor: 'rgba(255,247,214,0.18)',
   },
@@ -1439,20 +1439,22 @@ const styles = StyleSheet.create({
     color: '#FFF7D6',
     fontSize: 13,
     fontWeight: '900',
+    marginLeft: 6,
   },
   headerShopButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#24492E',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 5,
-    gap: 6,
+    marginLeft: 8,
     borderWidth: 2,
-    borderColor: 'rgba(255,247,214,0.18)',
+    borderColor: 'rgba(255,247,214,0.25)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.16,
+    shadowOpacity: 0.2,
     shadowRadius: 3,
     elevation: 3,
   },
@@ -1460,6 +1462,7 @@ const styles = StyleSheet.create({
     color: '#FFF7D6',
     fontSize: 13,
     fontWeight: '900',
+    marginLeft: 6,
   },
   statCluster: {
     flexDirection: 'row',
