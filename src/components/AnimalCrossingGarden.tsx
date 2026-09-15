@@ -630,10 +630,6 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             </View>
           </View>
           <View style={styles.barnBase} />
-          <View style={styles.barnSideProps}>
-            <Text style={{ fontSize: 13 }}>🪵</Text>
-            <Text style={{ fontSize: 13 }}>📦</Text>
-          </View>
         </View>
 
         {/* === 중앙: 스타듀밸리 농가 오두막 (Main Farmhouse Cabin) === */}
@@ -686,14 +682,6 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             <View style={styles.porchStep1} />
             <View style={styles.porchStep2} />
           </View>
-
-          {/* 마당 디테일: 우편함 & 장작더미 */}
-          <View style={styles.mailbox}>
-            <Text style={{ fontSize: 16 }}>📮</Text>
-          </View>
-          <View style={styles.woodPile}>
-            <Text style={{ fontSize: 15 }}>🪵</Text>
-          </View>
         </View>
 
         {/* === 우측: 유리 온실 & 가공 창고 (Stone Greenhouse & Workshop) === */}
@@ -706,18 +694,10 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             </View>
           </View>
           <View style={styles.greenhouseBody}>
-            <View style={styles.greenhouseWindow}>
-              <View style={styles.greenhousePlantEmoji}>
-                <Text style={{ fontSize: 11 }}>🌿</Text>
-              </View>
-            </View>
+            <View style={styles.greenhouseWindow} />
             <View style={styles.greenhouseDoor} />
           </View>
           <View style={styles.greenhouseBase} />
-          <View style={styles.greenhouseSideProps}>
-            <Text style={{ fontSize: 13 }}>🪴</Text>
-            <Text style={{ fontSize: 13 }}>🧰</Text>
-          </View>
         </View>
 
 
