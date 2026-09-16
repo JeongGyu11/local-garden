@@ -38,10 +38,13 @@ serve(async (request) => {
       mapX: String(longitude),
       mapY: String(latitude),
       radius: String(radiusMeters),
-      serviceKey: tourApiKey,
     });
 
-    const response = await fetch(`${TOUR_API_BASE}/locationBasedList2?${query.toString()}`);
+    // data.go.kr service keys are commonly already percent-encoded. Keep the key
+    // outside URLSearchParams to avoid encoding '%' a second time.
+    const response = await fetch(
+      `${TOUR_API_BASE}/locationBasedList2?serviceKey=${tourApiKey}&${query.toString()}`
+    );
     if (!response.ok) {
       throw new Error(`TourAPI request failed: ${response.status}`);
     }

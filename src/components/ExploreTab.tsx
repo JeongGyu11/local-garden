@@ -17,6 +17,7 @@ interface ExploreTabProps {
   touristSpots: TouristSpot[];
   onCheckIn: (spot: TouristSpot) => void | Promise<void>;
   onGoToGarden: () => void;
+  gpsStatusText: string;
   isGpsLoading: boolean;
   exploreRadiusMeters: number;
   onRefreshNearby: () => void;
@@ -29,6 +30,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   touristSpots,
   onCheckIn,
   onGoToGarden,
+  gpsStatusText,
   isGpsLoading,
   exploreRadiusMeters,
   onRefreshNearby,
@@ -292,7 +294,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
             </View>
             <Text style={styles.emptyTitle}>GPS 기반 관광지가 아직 없어요</Text>
             <Text style={styles.emptyText}>
-              위치 권한을 허용하고 검색을 눌러주세요. 현재 위치 주변 TourAPI 결과를 Groq가 분류한 장소만 보여줍니다.
+              {isGpsLoading ? 'GPS로 주변 관광지를 찾는 중입니다...' : gpsStatusText}
             </Text>
             <TouchableOpacity style={styles.emptyButton} onPress={onRefreshNearby}>
               <Ionicons name="refresh" size={15} color="#FFF8D9" />

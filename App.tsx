@@ -928,6 +928,7 @@ function GameApp({ session }: { session: Session }) {
               touristSpots={touristSpots}
               onCheckIn={handleCheckIn}
               onGoToGarden={() => setActiveTab('garden')}
+              gpsStatusText={gpsStatusText}
               isGpsLoading={gpsLoading || loading}
               exploreRadiusMeters={exploreRadiusMeters}
               onRefreshNearby={() => loadGpsTouristSpots(touristSpots)}
