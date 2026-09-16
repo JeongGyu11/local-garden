@@ -83,46 +83,26 @@ const classifyByScores = (
       discoveryType: classification?.discoveryType,
     };
   });
-  const popularLimit = Math.max(2, Math.min(5, Math.ceil(spots.length * 0.18)));
-  const nearPopularLimit = Math.max(3, Math.min(8, Math.ceil(spots.length * 0.28)));
+  const popularLimit = Math.min(5, spots.length);
+  const nearPopularLimit = Math.min(5, Math.max(0, spots.length - popularLimit));
 
   const popularIds = new Set(
     scored
-      .filter(({ popularityScore }) => popularityScore >= 70)
       .sort((a, b) => b.popularityScore - a.popularityScore)
       .slice(0, popularLimit)
       .map(({ id }) => id)
   );
 
-  if (popularIds.size === 0) {
-    const bestPopular = scored
-      .filter(({ popularityScore }) => popularityScore >= 50)
-      .sort((a, b) => b.popularityScore - a.popularityScore)[0];
-    if (bestPopular) {
-      popularIds.add(bestPopular.id);
-    }
-  }
-
   const nearPopularIds = new Set(
     scored
-      .filter(({ id, besidePopularScore, hasAnchor }) => {
-        return !popularIds.has(id) && hasAnchor && besidePopularScore >= 55;
-      })
-      .sort((a, b) => b.besidePopularScore - a.besidePopularScore)
+      .filter(({ id }) => !popularIds.has(id))
+      .sort((a, b) =>
+        Number(b.hasAnchor) - Number(a.hasAnchor) ||
+        b.besidePopularScore - a.besidePopularScore
+      )
       .slice(0, nearPopularLimit)
       .map(({ id }) => id)
   );
-
-  if (nearPopularIds.size === 0) {
-    const bestBeside = scored
-      .filter(({ id, besidePopularScore, hasAnchor }) => {
-        return !popularIds.has(id) && hasAnchor && besidePopularScore >= 45;
-      })
-      .sort((a, b) => b.besidePopularScore - a.besidePopularScore)[0];
-    if (bestBeside) {
-      nearPopularIds.add(bestBeside.id);
-    }
-  }
 
   return { popularIds, nearPopularIds };
 };
@@ -327,20 +307,74 @@ ${JSON.stringify(toPromptPayload(spots))}
         ],
         generationConfig: {
           temperature: 0.2,
+          maxOutputTokens: 12000,
           responseMimeType: 'application/json',
+          responseJsonSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              spots: {
+                type: 'array',
+                minItems: spots.length,
+                maxItems: spots.length,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    id: { type: 'string' },
+                    discoveryType: { type: 'string' },
+                    popularityScore: { type: 'integer', minimum: 0, maximum: 100 },
+                    besidePopularScore: { type: 'integer', minimum: 0, maximum: 100 },
+                    hiddenScore: { type: 'integer', minimum: 0, maximum: 100 },
+                    reason: { type: 'string' },
+                    seedName: { type: 'string' },
+                    seedVisual: {
+                      type: 'object',
+                      additionalProperties: false,
+                      properties: {
+                        theme: { type: 'string' },
+                        primaryColor: { type: 'string' },
+                        secondaryColor: { type: 'string' },
+                        accentColor: { type: 'string' },
+                        pattern: { type: 'string' },
+                      },
+                      required: ['theme', 'primaryColor', 'secondaryColor', 'accentColor', 'pattern'],
+                    },
+                    anchorName: { type: 'string' },
+                  },
+                  required: [
+                    'id',
+                    'discoveryType',
+                    'popularityScore',
+                    'besidePopularScore',
+                    'hiddenScore',
+                    'reason',
+                    'seedName',
+                    'seedVisual',
+                    'anchorName',
+                  ],
+                },
+              },
+            },
+            required: ['spots'],
+          },
         },
       }),
     }
   );
 
   if (!response.ok) {
-    throw new Error(`Gemini request failed: ${response.status}`);
+    const errorBody = (await response.text()).trim();
+    throw new Error(
+      `Gemini request failed: ${response.status}${errorBody ? ` · ${errorBody}` : ''}`
+    );
   }
 
   const json = await response.json();
   const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (typeof text !== 'string') {
-    return spots;
+    const finishReason = json?.candidates?.[0]?.finishReason ?? 'unknown';
+    throw new Error(`Gemini returned no JSON content (finishReason: ${finishReason})`);
   }
 
   const parsed = parseGeminiJson(text);
@@ -355,23 +389,46 @@ ${JSON.stringify(toPromptPayload(spots))}
       })
       .filter((item): item is readonly [string, GeminiSpotClassification] => item !== null)
   );
+  const expectedIds = new Set(spots.map((spot) => spot.id));
+  const hasEverySpotExactlyOnce =
+    classificationById.size === spots.length &&
+    [...classificationById.keys()].every((id) => expectedIds.has(id));
+  if (!hasEverySpotExactlyOnce) {
+    throw new Error(
+      `Gemini returned an incomplete classification (${classificationById.size}/${spots.length})`
+    );
+  }
   const scoreBuckets = classifyByScores(classificationById, spots);
 
-  return spots.map((spot) => {
+  const hiddenIds = new Set(
+    spots
+      .filter((spot) => !scoreBuckets.popularIds.has(spot.id) && !scoreBuckets.nearPopularIds.has(spot.id))
+      .sort((a, b) => {
+        const scoreA = sanitizeScore(classificationById.get(a.id)?.hiddenScore);
+        const scoreB = sanitizeScore(classificationById.get(b.id)?.hiddenScore);
+        return scoreB - scoreA;
+      })
+      .slice(0, 10)
+      .map((spot) => spot.id)
+  );
+
+  return spots.flatMap((spot) => {
     const classification = classificationById.get(spot.id);
-    if (!classification) {
-      return spot;
-    }
+    if (!classification) return [];
     const popularityScore = sanitizeScore(classification.popularityScore);
     const besidePopularScore = sanitizeScore(classification.besidePopularScore);
     const hiddenScore = sanitizeScore(classification.hiddenScore);
-    const discoveryType: DiscoveryType = scoreBuckets.popularIds.has(spot.id)
+    const discoveryType = scoreBuckets.popularIds.has(spot.id)
       ? 'popular'
       : scoreBuckets.nearPopularIds.has(spot.id)
         ? 'nearPopular'
-        : 'hiddenDiscovery';
+        : hiddenIds.has(spot.id)
+          ? 'hiddenDiscovery'
+          : null;
 
-    return {
+    if (!discoveryType) return [];
+
+    return [{
       ...spot,
       discoveryType,
       anchorName:
@@ -384,6 +441,6 @@ ${JSON.stringify(toPromptPayload(spots))}
       popularityScore,
       besidePopularScore,
       hiddenScore,
-    };
+    }];
   });
 }

@@ -71,13 +71,31 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
         }
       }
 
-      const seen = await AsyncStorage.getItem(ONBOARDING_KEY);
-      await supabase.auth.signOut();
+      const [seen, sessionResult] = await Promise.all([
+        AsyncStorage.getItem(ONBOARDING_KEY),
+        supabase.auth.getSession(),
+      ]);
 
       if (!mounted) return;
 
-      setSession(null);
-      setOnboardingComplete(seen === 'true');
+      let currentSession = sessionResult.data.session;
+      if (currentSession) {
+        const userResult = await supabase.auth.getUser();
+        if (!userResult.data.user) {
+          await supabase.auth.signOut({ scope: 'local' });
+          currentSession = null;
+        }
+      }
+
+      if (!mounted) return;
+
+      setSession(currentSession);
+      if (currentSession) {
+        await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+        setOnboardingComplete(true);
+      } else {
+        setOnboardingComplete(seen === 'true');
+      }
       setChecking(false);
     }
 

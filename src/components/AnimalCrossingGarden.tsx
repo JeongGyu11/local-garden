@@ -36,6 +36,8 @@ interface AnimalCrossingGardenProps {
   initialMenuButtonScale: number;
   waterCooldownReductionMs: number;
   sunCooldownReductionMs: number;
+  growthBoostCount: number;
+  welcomeGiftClaimed: boolean;
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
@@ -45,6 +47,9 @@ interface AnimalCrossingGardenProps {
   onSellHarvestedCrop: (crop: HarvestedCrop) => void;
   onBuySeed: (seed: Seed, price: number) => void;
   onBuyCareCooldownUpgrade: (type: 'water' | 'sun') => void | Promise<void>;
+  onBuyGrowthBoost: () => void | Promise<void>;
+  onUseGrowthBoost: (plantId: string) => void | Promise<void>;
+  onClaimWelcomeGift: () => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
   onChangeFarmName: (farmName: string) => Promise<void>;
@@ -55,6 +60,7 @@ interface AnimalCrossingGardenProps {
     sunCooldownReductionMs: number;
   }) => Promise<void>;
   onLogout: () => Promise<void>;
+  onDeleteAccount: () => Promise<void>;
 }
 
 interface MapPoint {
@@ -120,6 +126,7 @@ const MIN_MENU_BUTTON_SCALE = 0.7;
 const MAX_MENU_BUTTON_SCALE = 1.4;
 const CHANGE_SERVICE_PRICE = 500;
 const CARE_UPGRADE_PRICE = 200;
+const GROWTH_BOOST_PRICE = 1000;
 const CARE_BASE_COOLDOWN_MS = 20 * 60 * 1000;
 const CARE_UPGRADE_REDUCTION_MS = 10 * 1000;
 const FARM_BGM = require('../../assets/audio/farm-bgm.mp3');
@@ -164,6 +171,8 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   initialMenuButtonScale,
   waterCooldownReductionMs,
   sunCooldownReductionMs,
+  growthBoostCount,
+  welcomeGiftClaimed,
   onWater,
   onSun,
   onHarvest,
@@ -173,11 +182,15 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   onSellHarvestedCrop,
   onBuySeed,
   onBuyCareCooldownUpgrade,
+  onBuyGrowthBoost,
+  onUseGrowthBoost,
+  onClaimWelcomeGift,
   onChangeCharacter,
   onChangePet,
   onChangeFarmName,
   onControlSettingsChange,
   onLogout,
+  onDeleteAccount,
 }) => {
   const { height } = useWindowDimensions();
   const bgmPlayer = useAudioPlayer(FARM_BGM);
@@ -191,9 +204,11 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const [bagVisible, setBagVisible] = useState(false);
   const [shopVisible, setShopVisible] = useState(false);
   const [cabinInteriorVisible, setCabinInteriorVisible] = useState(false);
+  const [noticeBoardVisible, setNoticeBoardVisible] = useState(false);
   const [interiorEffect, setInteriorEffect] = useState<string | null>(null);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [dpadScale, setDpadScale] = useState(initialDpadScale);
   const [dpadSliderWidth, setDpadSliderWidth] = useState(0);
   const [menuButtonScale, setMenuButtonScale] = useState(initialMenuButtonScale);
@@ -414,6 +429,33 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
     }
   };
 
+  const deleteAccount = async () => {
+    if (deletingAccount) return;
+    setDeletingAccount(true);
+    try {
+      await onDeleteAccount();
+      setSettingsVisible(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '회원 탈퇴 중 문제가 발생했습니다.';
+      Alert.alert('회원 탈퇴 실패', message);
+      setDeletingAccount(false);
+    }
+  };
+
+  const confirmDeleteAccount = () => {
+    const message = '계정과 농장 데이터가 모두 영구 삭제되며 복구할 수 없습니다. 정말 탈퇴하시겠어요?';
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (window.confirm(message)) {
+        void deleteAccount();
+      }
+      return;
+    }
+    Alert.alert('회원 탈퇴', message, [
+      { text: '취소', style: 'cancel' },
+      { text: '회원 탈퇴', style: 'destructive', onPress: () => void deleteAccount() },
+    ]);
+  };
+
   const handlePaidCharacterChange = () => {
     if (money < CHANGE_SERVICE_PRICE) {
       Alert.alert('골드가 부족해요', `캐릭터 변경에는 ${CHANGE_SERVICE_PRICE}G가 필요합니다.`);
@@ -558,6 +600,23 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             <Ionicons name="sunny" size={18} color="#FFF7D6" />
             <Text style={styles.actionButtonText}>햇빛</Text>
           </Pressable>
+          {growthBoostCount > 0 && (
+            <Pressable
+              style={[styles.squareActionButton, styles.growthBoostButton]}
+              onPress={(event) =>
+                handleControlPress(event, () => {
+                  void onUseGrowthBoost(currentPlantInPlot.id);
+                  triggerEffect('🌱 무럭무럭!', charPos.x, charPos.y - 7);
+                })
+              }
+            >
+              <MaterialCommunityIcons name="sprout" size={18} color="#FFF7D6" />
+              <Text style={styles.actionButtonText}>무럭무럭</Text>
+              <View style={styles.actionBadge}>
+                <Text style={styles.actionBadgeText}>{growthBoostCount}</Text>
+              </View>
+            </Pressable>
+          )}
         </>
       );
     }
@@ -637,7 +696,9 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           <Ionicons name="archive" size={menuButtonIconSize} color="#FFF7D6" />
           <Text style={[styles.actionButtonText, menuButtonTextStyle]}>창고</Text>
           <View style={styles.actionBadge}>
-            <Text style={styles.actionBadgeText}>{seeds.length + harvestedCrops.length}</Text>
+            <Text style={styles.actionBadgeText}>
+              {seeds.length + harvestedCrops.length + growthBoostCount}
+            </Text>
           </View>
         </Pressable>
       );
@@ -776,7 +837,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           <View style={styles.fencePost} />
         </View>
 
-        {/* === 우측 뒤편: 마을 창고 (Village Warehouse - Layered Behind Cabin) === */}
+        {/* === 우측: 마을 창고 (Village Warehouse) === */}
         <View style={styles.warehouseContainer} pointerEvents="none">
           <View style={[styles.buildingSignPlate, isNearWarehouse && styles.buildingSignPlateActive]}>
             <Ionicons name="archive" size={10} color="#FFE57F" />
@@ -888,6 +949,23 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             <View style={styles.porchStep2} />
           </View>
         </View>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="공지사항 우체통 열기"
+          style={({ pressed }) => [styles.mailbox, pressed && styles.mailboxPressed]}
+          onPress={(event) =>
+            handleControlPress(event, () => setNoticeBoardVisible(true))
+          }
+        >
+          <View style={styles.mailboxFlag} />
+          <View style={styles.mailboxBox}>
+            <Ionicons name="mail" size={16} color="#FFF7D6" />
+          </View>
+          <View style={styles.mailboxPost} />
+          <View style={styles.mailboxFoot} />
+          <Text style={styles.mailboxLabel}>공지</Text>
+        </Pressable>
 
 
         {placedPlots.map((plot, index) => {
@@ -1073,6 +1151,66 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
       </Pressable>
 
       <Modal
+        visible={noticeBoardVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNoticeBoardVisible(false)}
+      >
+        <View style={styles.bagBackdrop}>
+          <View style={styles.noticeBoardModal}>
+            <View style={styles.noticeBoardHeader}>
+              <View>
+                <Text style={styles.bagEyebrow}>로컬 가든 소식</Text>
+                <Text style={styles.bagTitle}>공지사항</Text>
+              </View>
+              <Pressable
+                style={styles.bagCloseButton}
+                onPress={() => handlePlainPress(() => setNoticeBoardVisible(false))}
+              >
+                <Ionicons name="close" size={20} color="#FFF7D6" />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.noticeBoardContent} showsVerticalScrollIndicator={false}>
+              {!welcomeGiftClaimed && (
+                <View style={styles.giftInboxCard}>
+                  <View style={styles.giftInboxIcon}>
+                    <Ionicons name="gift" size={27} color="#FFF7D6" />
+                  </View>
+                  <View style={styles.giftInboxCopy}>
+                    <Text style={styles.giftInboxEyebrow}>신규 유저 선물함</Text>
+                    <Text style={styles.giftInboxTitle}>무럭무럭 자라라 × 5</Text>
+                    <Text style={styles.giftInboxDescription}>
+                      작물을 바로 수확 가능하게 만드는 성장 아이템입니다.
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={styles.giftClaimButton}
+                    onPress={() => handlePlainPress(onClaimWelcomeGift)}
+                  >
+                    <Text style={styles.giftClaimButtonText}>받기</Text>
+                  </Pressable>
+                </View>
+              )}
+              <View style={styles.noticeItem}>
+                <Text style={styles.noticeDate}>새로운 소식</Text>
+                <Text style={styles.noticeTitle}>🌱 무럭무럭 자라라 출시</Text>
+                <Text style={styles.noticeBody}>
+                  상점에서 1000G에 구매할 수 있습니다. 작물 하나에 사용하면 바로 수확 가능한 상태가 됩니다.
+                </Text>
+              </View>
+              <View style={styles.noticeItem}>
+                <Text style={styles.noticeDate}>게임 이용 안내</Text>
+                <Text style={styles.noticeTitle}>🏡 로컬 가든에 오신 것을 환영합니다</Text>
+                <Text style={styles.noticeBody}>
+                  관광지를 탐험해 씨앗을 모으고, 나만의 농장에서 지역 작물을 키워보세요.
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={settingsVisible}
         transparent
         animationType="fade"
@@ -1159,6 +1297,20 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                 <Ionicons name="log-out-outline" size={19} color="#8B2F2F" />
                 <Text style={styles.logoutButtonText}>
                   {loggingOut ? '로그아웃 중...' : '로그아웃'}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.deleteAccountButton,
+                  pressed && styles.logoutButtonPressed,
+                  deletingAccount && styles.logoutButtonDisabled,
+                ]}
+                onPress={confirmDeleteAccount}
+                disabled={deletingAccount}
+              >
+                <Ionicons name="person-remove-outline" size={19} color="#B42318" />
+                <Text style={styles.deleteAccountButtonText}>
+                  {deletingAccount ? '탈퇴 처리 중...' : '회원 탈퇴'}
                 </Text>
               </Pressable>
             </ScrollView>
@@ -1414,6 +1566,20 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                   <Text style={styles.emptyBagText}>보유 중인 씨앗이 없습니다.</Text>
                 </View>
               )}
+
+              <View style={[styles.bagSectionHeader, styles.seedSectionHeader]}>
+                <Text style={styles.bagSectionTitle}>성장 아이템</Text>
+                <Text style={styles.bagSectionCount}>{growthBoostCount}개</Text>
+              </View>
+              <View style={styles.bagItem}>
+                <View style={[styles.bagItemIcon, styles.growthBoostIcon]}>
+                  <Text style={styles.bagItemEmoji}>🌱</Text>
+                </View>
+                <View style={styles.bagItemCopy}>
+                  <Text style={styles.bagItemName}>무럭무럭 자라라</Text>
+                  <Text style={styles.bagItemMeta}>작물 하나를 즉시 수확 가능 상태로 만듭니다.</Text>
+                </View>
+              </View>
             </ScrollView>
           </View>
         </View>
@@ -1581,6 +1747,27 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                   <Text style={styles.emptyBagText}>판매할 수확물이 없습니다. 다 자란 작물을 수확해보세요.</Text>
                 </View>
               )}
+
+              <View style={[styles.bagSectionHeader, styles.shopSectionSpacing]}>
+                <Text style={styles.bagSectionTitle}>성장 아이템</Text>
+                <Text style={styles.bagSectionCount}>1회용</Text>
+              </View>
+              <View style={styles.shopCropItem}>
+                <View style={[styles.bagItemIcon, styles.growthBoostIcon]}>
+                  <Text style={styles.bagItemEmoji}>🌱</Text>
+                </View>
+                <View style={styles.bagItemCopy}>
+                  <Text style={styles.bagItemName}>무럭무럭 자라라</Text>
+                  <Text style={styles.bagItemMeta}>물과 햇빛 없이 작물 하나를 바로 수확 가능하게 합니다.</Text>
+                </View>
+                <Pressable
+                  style={[styles.buyButton, money < GROWTH_BOOST_PRICE && styles.unavailableButton]}
+                  onPress={() => handlePlainPress(onBuyGrowthBoost)}
+                  disabled={money < GROWTH_BOOST_PRICE}
+                >
+                  <Text style={styles.buyButtonText}>{GROWTH_BOOST_PRICE}G 구매</Text>
+                </Pressable>
+              </View>
 
               <View style={[styles.bagSectionHeader, styles.shopSectionSpacing]}>
                 <Text style={styles.bagSectionTitle}>씨앗 구매</Text>
@@ -2088,9 +2275,64 @@ const styles = StyleSheet.create({
   },
   mailbox: {
     position: 'absolute',
+    left: '50%',
+    marginLeft: 88,
+    top: 116,
+    width: 48,
+    height: 68,
+    alignItems: 'center',
+    zIndex: 22,
+  },
+  mailboxPressed: {
+    transform: [{ scale: 0.94 }],
+  },
+  mailboxFlag: {
+    position: 'absolute',
     right: 2,
-    bottom: -6,
-    zIndex: 15,
+    top: 1,
+    width: 4,
+    height: 27,
+    backgroundColor: '#7F1D1D',
+    borderRadius: 2,
+    zIndex: 3,
+  },
+  mailboxBox: {
+    width: 42,
+    height: 30,
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4,
+    backgroundColor: '#B45309',
+    borderWidth: 2,
+    borderColor: '#5B2B0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  mailboxPost: {
+    width: 7,
+    height: 27,
+    backgroundColor: '#6B3A16',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: '#3F210B',
+  },
+  mailboxFoot: {
+    width: 28,
+    height: 5,
+    borderRadius: 2,
+    backgroundColor: '#4A2B14',
+  },
+  mailboxLabel: {
+    marginTop: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
+    backgroundColor: '#24492E',
+    color: '#FFF7D6',
+    fontSize: 8,
+    fontWeight: '900',
   },
   woodPile: {
     position: 'absolute',
@@ -2099,17 +2341,15 @@ const styles = StyleSheet.create({
     zIndex: 15,
   },
 
-  /* === 우측 뒤편: 마을 창고 (Village Warehouse / Storage - Behind Cabin) === */
+  /* === 우측: 마을 창고 (Village Warehouse / Storage) === */
   warehouseContainer: {
     position: 'absolute',
-    left: '50%',
-    marginLeft: 32,
-    top: 6,
+    right: '6%',
+    top: 18,
     width: 112,
     height: 135,
-    alignItems: 'flex-end',
-    paddingRight: 6,
-    zIndex: 8,
+    alignItems: 'center',
+    zIndex: 10,
   },
   warehouseRoof: {
     width: 106,
@@ -2824,6 +3064,15 @@ const styles = StyleSheet.create({
   sunButton: {
     backgroundColor: '#B47B25',
   },
+  growthBoostButton: {
+    backgroundColor: '#3F7D3A',
+    borderColor: '#B7E08A',
+  },
+  growthBoostIcon: {
+    backgroundColor: '#DDF4B8',
+    borderColor: '#7AA64A',
+    borderWidth: 1,
+  },
   actionButtonText: {
     color: '#FFF7D6',
     fontSize: 12,
@@ -2845,6 +3094,108 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#7A5328',
     overflow: 'hidden',
+  },
+  noticeBoardModal: {
+    width: '100%',
+    maxWidth: 380,
+    maxHeight: '72%',
+    backgroundColor: '#FFF7D6',
+    borderRadius: 10,
+    borderWidth: 3,
+    borderColor: '#7C4E22',
+    overflow: 'hidden',
+  },
+  noticeBoardHeader: {
+    minHeight: 76,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    backgroundColor: '#7C4E22',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  noticeBoardContent: {
+    padding: 16,
+  },
+  giftInboxCard: {
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#D99A28',
+    backgroundColor: '#FFF3C4',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  giftInboxIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#D97706',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  giftInboxCopy: {
+    flex: 1,
+  },
+  giftInboxEyebrow: {
+    color: '#9A5B13',
+    fontSize: 10,
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+  giftInboxTitle: {
+    color: '#3F4C2B',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  giftInboxDescription: {
+    color: '#6A624D',
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 3,
+    fontWeight: '600',
+  },
+  giftClaimButton: {
+    minWidth: 58,
+    height: 36,
+    borderRadius: 7,
+    backgroundColor: '#2D6A4F',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  giftClaimButtonText: {
+    color: '#FFF7D6',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  noticeItem: {
+    marginBottom: 14,
+    padding: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D8C89A',
+    backgroundColor: '#FFFDF2',
+  },
+  noticeDate: {
+    color: '#8A6A3D',
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  noticeTitle: {
+    color: '#2D4A32',
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 7,
+  },
+  noticeBody: {
+    color: '#5E604E',
+    fontSize: 13,
+    lineHeight: 20,
+    fontWeight: '600',
   },
   settingsModal: {
     width: '100%',
@@ -3034,6 +3385,23 @@ const styles = StyleSheet.create({
   },
   logoutButtonText: {
     color: '#8B2F2F',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  deleteAccountButton: {
+    minHeight: 48,
+    marginTop: 10,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#E6A09A',
+    backgroundColor: '#FFF1F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  deleteAccountButtonText: {
+    color: '#B42318',
     fontSize: 14,
     fontWeight: '900',
   },

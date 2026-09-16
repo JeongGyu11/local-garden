@@ -9,6 +9,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { TouristSpot } from '../types';
 import { SeedVisual } from './SeedVisual';
+import { getDiscoveryRewardCount } from '../data/discoveryRewards';
 
 interface CheckInModalProps {
   visible: boolean;
@@ -49,7 +50,9 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
             <SeedVisual visual={spot.seedVisual} emoji={spot.seedEmoji} size={58} />
             <View style={styles.seedTextCol}>
               <Text style={styles.seedObtainedLabel}>새로운 특산 씨앗 획득!</Text>
-              <Text style={styles.seedName}>{spot.seedName}</Text>
+              <Text style={styles.seedName}>
+                {spot.seedName} × {getDiscoveryRewardCount(spot)}
+              </Text>
               <Text style={styles.seedRegion}>
                 [{spot.region} 특산물] 내 가든에 보관되었습니다.
               </Text>

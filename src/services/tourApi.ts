@@ -1,5 +1,6 @@
 import { SeedVisual, TouristSpot } from '../types';
 import { curateTouristSpotsWithGemini } from './geminiApi';
+import { curateTouristSpotsWithGroq } from './groqApi';
 
 declare const process: {
   env?: {
@@ -323,11 +324,11 @@ const createDistanceBuckets = (radiusMeters: number) => {
 };
 
 const getMaxSpotCount = (radiusMeters: number) => {
-  if (radiusMeters <= 1000) return 9;
-  if (radiusMeters <= 3000) return 12;
-  if (radiusMeters <= 5000) return 15;
-  if (radiusMeters <= 10000) return 20;
-  return 25;
+  if (radiusMeters <= 1000) return 10;
+  if (radiusMeters <= 3000) return 15;
+  if (radiusMeters <= 5000) return 20;
+  if (radiusMeters <= 10000) return 25;
+  return 30;
 };
 
 const selectDistanceSpreadCandidates = (
@@ -492,48 +493,39 @@ const applyFamousAnchorDiscoveryRules = (spots: TouristSpot[]) => {
     return spots;
   }
 
-  const nextSpots = spots.map((spot) => ({ ...spot }));
-  const popularAnchors = getPopularAnchors(nextSpots);
-  const maxNearPopular = Math.min(4, Math.max(2, Math.ceil(nextSpots.length * 0.2)));
-  let nearPopularCount = 0;
+  const ranked = spots
+    .map((spot, index) => ({ spot: { ...spot }, index, score: getRepresentativeSpotScore(spot, index) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  const popular = ranked.slice(0, 5).map(({ spot }) => spot);
+  const popularIds = new Set(popular.map((spot) => spot.id));
+  const remaining = ranked.map(({ spot }) => spot).filter((spot) => !popularIds.has(spot.id));
+  const nearPopular = remaining
+    .map((spot) => ({ spot, nearest: findNearestPopularAnchor(spot, popular) }))
+    .sort((a, b) => a.nearest.distance - b.nearest.distance)
+    .slice(0, 5);
+  const nearPopularIds = new Set(nearPopular.map(({ spot }) => spot.id));
+  const hidden = remaining.filter((spot) => !nearPopularIds.has(spot.id)).slice(0, 10);
 
-  return nextSpots.map((spot) => {
-    if (popularAnchors.some((anchor) => anchor.id === spot.id)) {
-      return {
-        ...spot,
-        discoveryType: 'popular' as const,
-        anchorName: undefined,
-        description:
-          spot.description && spot.description !== getDefaultDescription('nearPopular')
-            ? spot.description
-            : getDefaultDescription('popular'),
-      };
-    }
-
-    const nearestPopular = findNearestPopularAnchor(spot, popularAnchors);
-    const isBesidePopular =
-      nearestPopular &&
-      Number.isFinite(nearestPopular.distance) &&
-      nearestPopular.distance <= 3000 &&
-      nearPopularCount < maxNearPopular;
-
-    if (isBesidePopular) {
-      nearPopularCount += 1;
-      return {
-        ...spot,
-        discoveryType: 'nearPopular' as const,
-        anchorName: nearestPopular.anchor.title,
-        description: `${nearestPopular.anchor.title} 근처의 상대적으로 덜 알려진 장소입니다.`,
-      };
-    }
-
-    return {
+  return [
+    ...popular.map((spot) => ({
+      ...spot,
+      discoveryType: 'popular' as const,
+      anchorName: undefined,
+      description: getDefaultDescription('popular'),
+    })),
+    ...nearPopular.map(({ spot, nearest }) => ({
+      ...spot,
+      discoveryType: 'nearPopular' as const,
+      anchorName: nearest.anchor.title,
+      description: `${nearest.anchor.title} 근처의 상대적으로 덜 알려진 장소입니다.`,
+    })),
+    ...hidden.map((spot) => ({
       ...spot,
       discoveryType: 'hiddenDiscovery' as const,
       anchorName: undefined,
       description: getDefaultDescription('hiddenDiscovery'),
-    };
-  });
+    })),
+  ];
 };
 
 export async function fetchNearbyHiddenTouristSpots(
@@ -580,9 +572,14 @@ export async function fetchNearbyHiddenTouristSpots(
   });
 
   try {
-    return await curateTouristSpotsWithGemini(spots);
-  } catch (geminiErr) {
-    console.warn('Gemini tourist spot curation failed:', geminiErr);
-    return applyFamousAnchorDiscoveryRules(spots);
+    return await curateTouristSpotsWithGroq(spots);
+  } catch (groqErr) {
+    console.warn('Groq 관광지 큐레이션 실패 (2차 Gemini API로 전환합니다):', groqErr);
+    try {
+      return await curateTouristSpotsWithGemini(spots);
+    } catch (geminiErr) {
+      console.warn('Gemini 관광지 큐레이션 실패 (3차 로컬 규칙으로 전환합니다):', geminiErr);
+      return applyFamousAnchorDiscoveryRules(spots);
+    }
   }
 }

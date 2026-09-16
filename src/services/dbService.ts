@@ -19,6 +19,12 @@ import {
 } from '../data/mockData';
 
 export const dbService = {
+  async deleteAccount() {
+    const { error } = await supabase.rpc('delete_own_account');
+    if (error) throw error;
+    await supabase.auth.signOut({ scope: 'local' });
+  },
+
   // 1. 유저 전체 데이터 초기화 및 불러오기
   async loadUserData(userId: string) {
     try {
@@ -50,9 +56,9 @@ export const dbService = {
         .maybeSingle();
 
       if (!gameState) {
-        await supabase.from('game_states').insert({ user_id: userId, money: 1000 });
+        await supabase.from('game_states').insert({ user_id: userId, money: 2000 });
       }
-      const money = gameState?.money ?? 1000;
+      const money = gameState?.money ?? 2000;
       const savedSettings =
         gameState?.settings && typeof gameState.settings === 'object'
           ? gameState.settings
@@ -71,10 +77,17 @@ export const dbService = {
         typeof savedSettings.sunCooldownReductionMs === 'number'
           ? savedSettings.sunCooldownReductionMs
           : 0;
+      const growthBoostCount =
+        typeof savedSettings.growthBoostCount === 'number'
+          ? Math.max(0, Math.floor(savedSettings.growthBoostCount))
+          : 0;
+      const welcomeGiftClaimed = savedSettings.welcomeGiftClaimed === true;
       const farmName =
         typeof savedSettings.farmName === 'string' && savedSettings.farmName.trim()
           ? savedSettings.farmName.trim()
           : `${farmerName.trim() || '나'}의 농장`;
+      const hasCustomFarmName =
+        typeof savedSettings.farmName === 'string' && Boolean(savedSettings.farmName.trim());
       const harvestedCrops: HarvestedCrop[] = Array.isArray(gameState?.harvested_crops)
         ? gameState.harvested_crops
         : [];
@@ -223,7 +236,10 @@ export const dbService = {
           menuButtonScale,
           waterCooldownReductionMs,
           sunCooldownReductionMs,
+          growthBoostCount,
+          welcomeGiftClaimed,
           farmName,
+          hasCustomFarmName,
         },
       };
     } catch (error) {
@@ -237,7 +253,7 @@ export const dbService = {
           coupons: INITIAL_COUPONS,
           encyclopedia: [],
           farmerName: '로컬 정원사',
-          money: 1000,
+          money: 2000,
           harvestedCrops: [],
           ownedBuildings: [],
           gender: null,
@@ -248,7 +264,10 @@ export const dbService = {
           menuButtonScale: 1,
           waterCooldownReductionMs: 0,
           sunCooldownReductionMs: 0,
+          growthBoostCount: 0,
+          welcomeGiftClaimed: false,
           farmName: '나의 농장',
+          hasCustomFarmName: false,
         },
       };
     }
@@ -273,6 +292,8 @@ export const dbService = {
       farmName: string;
       waterCooldownReductionMs: number;
       sunCooldownReductionMs: number;
+      growthBoostCount: number;
+      welcomeGiftClaimed: boolean;
     }
   ) {
     const { error } = await supabase

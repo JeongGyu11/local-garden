@@ -25,6 +25,8 @@ interface GardenTabProps {
   menuButtonScale: number;
   waterCooldownReductionMs: number;
   sunCooldownReductionMs: number;
+  growthBoostCount: number;
+  welcomeGiftClaimed: boolean;
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
@@ -34,6 +36,9 @@ interface GardenTabProps {
   onSellHarvestedCrop: (crop: HarvestedCrop) => void;
   onBuySeed: (seed: Seed, price: number) => void;
   onBuyCareCooldownUpgrade: (type: 'water' | 'sun') => void | Promise<void>;
+  onBuyGrowthBoost: () => void | Promise<void>;
+  onUseGrowthBoost: (plantId: string) => void | Promise<void>;
+  onClaimWelcomeGift: () => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
   onChangeFarmName: (farmName: string) => Promise<void>;
@@ -44,6 +49,7 @@ interface GardenTabProps {
     sunCooldownReductionMs: number;
   }) => Promise<void>;
   onLogout: () => Promise<void>;
+  onDeleteAccount: () => Promise<void>;
 }
 
 const STAGE_NAMES = ['🌱 씨앗', '🌿 새싹', '🌸 꽃봉오리', '🍊 열매 맺음', '✨ 수확 가능!'];
@@ -62,6 +68,8 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   menuButtonScale,
   waterCooldownReductionMs,
   sunCooldownReductionMs,
+  growthBoostCount,
+  welcomeGiftClaimed,
   onWater,
   onSun,
   onHarvest,
@@ -71,11 +79,15 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   onSellHarvestedCrop,
   onBuySeed,
   onBuyCareCooldownUpgrade,
+  onBuyGrowthBoost,
+  onUseGrowthBoost,
+  onClaimWelcomeGift,
   onChangeCharacter,
   onChangePet,
   onChangeFarmName,
   onControlSettingsChange,
   onLogout,
+  onDeleteAccount,
 }) => {
   const [viewMode, setViewMode] = useState<'game' | 'list'>('game');
 
@@ -138,6 +150,8 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           initialMenuButtonScale={menuButtonScale}
           waterCooldownReductionMs={waterCooldownReductionMs}
           sunCooldownReductionMs={sunCooldownReductionMs}
+          growthBoostCount={growthBoostCount}
+          welcomeGiftClaimed={welcomeGiftClaimed}
           onWater={onWater}
           onSun={onSun}
           onHarvest={onHarvest}
@@ -147,11 +161,15 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           onSellHarvestedCrop={onSellHarvestedCrop}
           onBuySeed={onBuySeed}
           onBuyCareCooldownUpgrade={onBuyCareCooldownUpgrade}
+          onBuyGrowthBoost={onBuyGrowthBoost}
+          onUseGrowthBoost={onUseGrowthBoost}
+          onClaimWelcomeGift={onClaimWelcomeGift}
           onChangeCharacter={onChangeCharacter}
           onChangePet={onChangePet}
           onChangeFarmName={onChangeFarmName}
           onControlSettingsChange={onControlSettingsChange}
           onLogout={onLogout}
+          onDeleteAccount={onDeleteAccount}
         />
       </View>
     );

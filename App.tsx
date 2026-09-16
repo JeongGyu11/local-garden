@@ -41,6 +41,7 @@ import { AuthGate } from './src/components/AuthGate';
 import { CharacterSurvey } from './src/components/CharacterSurvey';
 import { PetSurvey } from './src/components/PetSurvey';
 import { supabase } from './src/lib/supabase';
+import { getDiscoveryRewardCount } from './src/data/discoveryRewards';
 
 type TabType = 'garden' | 'explore' | 'encyclopedia';
 type LocationPoint = { latitude: number; longitude: number };
@@ -53,8 +54,10 @@ const HARVEST_SELL_PRICE = 350;
 const CHANGE_SERVICE_PRICE = 500;
 const CARE_UPGRADE_PRICE = 200;
 const CARE_UPGRADE_REDUCTION_MS = 10 * 1000;
+const GROWTH_BOOST_PRICE = 1000;
 const DEFAULT_EXPLORE_RADIUS_METERS = 5000;
 const CARE_PROGRESS_STEP = 50;
+const WEB_PHONE_MAX_WIDTH = 430;
 const LEGACY_DEFAULT_PLANT_IDS = new Set(['p1', 'p2']);
 const LEGACY_DEFAULT_SEED_IDS = new Set(['s1']);
 
@@ -164,7 +167,7 @@ function GameApp({ session }: { session: Session }) {
   const [plants, setPlants] = useState<Plant[]>(INITIAL_PLANTS);
   const [seeds, setSeeds] = useState<Seed[]>(INITIAL_SEEDS);
   const [harvestedCrops, setHarvestedCrops] = useState<HarvestedCrop[]>([]);
-  const [money, setMoney] = useState<number>(1000);
+  const [money, setMoney] = useState<number>(2000);
   const [ownedBuildings, setOwnedBuildings] = useState<string[]>([]);
   const [avatarId, setAvatarId] = useState<AvatarId>('male_nature');
   const [characterSurveyVisible, setCharacterSurveyVisible] = useState(false);
@@ -174,6 +177,8 @@ function GameApp({ session }: { session: Session }) {
   const [menuButtonScale, setMenuButtonScale] = useState(1);
   const [waterCooldownReductionMs, setWaterCooldownReductionMs] = useState(0);
   const [sunCooldownReductionMs, setSunCooldownReductionMs] = useState(0);
+  const [growthBoostCount, setGrowthBoostCount] = useState(0);
+  const [welcomeGiftClaimed, setWelcomeGiftClaimed] = useState(false);
   const [farmName, setFarmName] = useState('나의 농장');
   const [petSurveyVisible, setPetSurveyVisible] = useState(false);
   const [editingPet, setEditingPet] = useState(false);
@@ -200,10 +205,7 @@ function GameApp({ session }: { session: Session }) {
     }));
   };
 
-  const loadGpsTouristSpots = async (
-    savedSpots: TouristSpot[] = touristSpots,
-    radiusMeters = exploreRadiusMeters
-  ) => {
+  const loadGpsTouristSpots = async (savedSpots: TouristSpot[] = touristSpots) => {
     setGpsLoading(true);
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
@@ -223,15 +225,28 @@ function GameApp({ session }: { session: Session }) {
       };
       setCurrentLocation(nextLocation);
 
-      const nearbySpots = await fetchNearbyHiddenTouristSpots(
+      let radiusMeters = DEFAULT_EXPLORE_RADIUS_METERS;
+      let nearbySpots = await fetchNearbyHiddenTouristSpots(
         nextLocation.latitude,
         nextLocation.longitude,
         radiusMeters
       );
 
+      if (nearbySpots.length < 20) {
+        radiusMeters = 10000;
+        setExploreRadiusMeters(radiusMeters);
+        nearbySpots = await fetchNearbyHiddenTouristSpots(
+          nextLocation.latitude,
+          nextLocation.longitude,
+          radiusMeters
+        );
+      } else {
+        setExploreRadiusMeters(radiusMeters);
+      }
+
       if (nearbySpots.length > 0) {
         setTouristSpots(mergeVisitedState(nearbySpots, savedSpots));
-        setGpsStatusText(`현재 GPS 기준 ${Math.round(radiusMeters / 1000)}km 안 TourAPI 장소를 Gemini가 분류해 표시 중`);
+        setGpsStatusText(`현재 GPS 기준 ${Math.round(radiusMeters / 1000)}km 안 TourAPI 장소를 Groq가 분류해 표시 중`);
       } else {
         setTouristSpots([]);
         setGpsStatusText(`현재 위치 ${Math.round(radiusMeters / 1000)}km 안에 인증 가능한 TourAPI 관광지가 없습니다`);
@@ -271,10 +286,8 @@ function GameApp({ session }: { session: Session }) {
             dbService.syncSeeds(userId, cleanedSeeds);
           }
           setFarmerName(result.data.farmerName);
-          setNameDraft(
-            result.data.farmerName === '로컬 정원사' ? '' : result.data.farmerName
-          );
-          setNameTutorialVisible(result.data.farmerName === '로컬 정원사');
+          setNameDraft(result.data.hasCustomFarmName ? result.data.farmName : '');
+          setNameTutorialVisible(!result.data.hasCustomFarmName);
           setMoney(result.data.money);
           setHarvestedCrops(result.data.harvestedCrops);
           setOwnedBuildings(result.data.ownedBuildings);
@@ -291,6 +304,8 @@ function GameApp({ session }: { session: Session }) {
           setMenuButtonScale(result.data.menuButtonScale);
           setWaterCooldownReductionMs(result.data.waterCooldownReductionMs);
           setSunCooldownReductionMs(result.data.sunCooldownReductionMs);
+          setGrowthBoostCount(result.data.growthBoostCount);
+          setWelcomeGiftClaimed(result.data.welcomeGiftClaimed);
           setFarmName(result.data.farmName);
           setPetSurveyVisible(!needsCharacter && !result.data.petId);
           setEditingPet(false);
@@ -413,11 +428,6 @@ function GameApp({ session }: { session: Session }) {
     Alert.alert('수확 완료', `${harvestCropName}을(를) 수확했습니다.`);
   };
 
-  const handleExploreRadiusChange = (radiusMeters: number) => {
-    setExploreRadiusMeters(radiusMeters);
-    loadGpsTouristSpots(touristSpots, radiusMeters);
-  };
-
   // 4. 씨앗 심기 핸들러
   const handlePlantSeed = (seed: Seed, plotIndex?: number) => {
     const occupiedPlotIndexes = new Set(
@@ -536,15 +546,17 @@ function GameApp({ session }: { session: Session }) {
     dbService.checkInSpot(userId, spot.id, spot.title, spot.region);
 
     // 씨앗 생성 및 지급 & 동기화
-    const newSeed: Seed = {
-      id: `seed_${Date.now()}`,
+    const rewardCount = getDiscoveryRewardCount(spot);
+    const rewardTimestamp = Date.now();
+    const newSeeds: Seed[] = Array.from({ length: rewardCount }, (_, index) => ({
+      id: `seed_${rewardTimestamp}_${index}`,
       name: spot.seedName,
       region: spot.region,
       emoji: spot.seedEmoji,
       visual: spot.seedVisual,
       description: `${spot.title} 방문 인증으로 획득한 귀한 특산 씨앗`,
-    };
-    const nextSeeds = [newSeed, ...seeds];
+    }));
+    const nextSeeds = [...newSeeds, ...seeds];
     setSeeds(nextSeeds);
     dbService.syncSeeds(userId, nextSeeds);
 
@@ -560,10 +572,22 @@ function GameApp({ session }: { session: Session }) {
   };
 
   const handleCompleteNameTutorial = async () => {
-    const nextName = nameDraft.trim() || '나';
+    const nextName = nameDraft.trim();
+    if (!nextName) {
+      Alert.alert('농장 이름', '농장 이름을 입력해주세요.');
+      return;
+    }
     try {
-      await dbService.updateFarmerName(userId, nextName);
-      setFarmerName(nextName);
+      await dbService.updateControlSettings(userId, {
+        dpadScale,
+        menuButtonScale,
+        waterCooldownReductionMs,
+        sunCooldownReductionMs,
+        growthBoostCount,
+        welcomeGiftClaimed,
+        farmName: nextName,
+      });
+      setFarmName(nextName);
       setNameTutorialVisible(false);
     } catch (error) {
       console.warn('Farmer name save error:', error);
@@ -589,6 +613,8 @@ function GameApp({ session }: { session: Session }) {
       menuButtonScale,
       waterCooldownReductionMs,
       sunCooldownReductionMs,
+      growthBoostCount,
+      welcomeGiftClaimed,
       farmName: normalizedName,
     });
     setFarmName(normalizedName);
@@ -605,7 +631,11 @@ function GameApp({ session }: { session: Session }) {
     setMenuButtonScale(settings.menuButtonScale);
     setWaterCooldownReductionMs(settings.waterCooldownReductionMs);
     setSunCooldownReductionMs(settings.sunCooldownReductionMs);
-    await dbService.updateControlSettings(userId, settings);
+    await dbService.updateControlSettings(userId, {
+      ...settings,
+      growthBoostCount,
+      welcomeGiftClaimed,
+    });
   };
 
   const handleBuyCareCooldownUpgrade = async (type: 'water' | 'sun') => {
@@ -634,11 +664,84 @@ function GameApp({ session }: { session: Session }) {
       farmName,
       waterCooldownReductionMs: nextWaterReduction,
       sunCooldownReductionMs: nextSunReduction,
+      growthBoostCount,
+      welcomeGiftClaimed,
     });
     Alert.alert(
       '강화 완료',
       `${type === 'water' ? '물주기' : '햇빛쬐기'} 대기 시간이 영구적으로 10초 줄었습니다.`
     );
+  };
+
+  const handleBuyGrowthBoost = async () => {
+    if (money < GROWTH_BOOST_PRICE) {
+      Alert.alert('골드가 부족해요', `${GROWTH_BOOST_PRICE - money}G가 더 필요합니다.`);
+      return;
+    }
+
+    const nextMoney = money - GROWTH_BOOST_PRICE;
+    const nextCount = growthBoostCount + 1;
+    setMoney(nextMoney);
+    setGrowthBoostCount(nextCount);
+    await dbService.updateGameState(userId, { money: nextMoney });
+    await dbService.updateControlSettings(userId, {
+      dpadScale,
+      menuButtonScale,
+      farmName,
+      waterCooldownReductionMs,
+      sunCooldownReductionMs,
+      growthBoostCount: nextCount,
+      welcomeGiftClaimed,
+    });
+    Alert.alert('구매 완료', '무럭무럭 자라라를 창고에 넣었습니다.');
+  };
+
+  const handleUseGrowthBoost = async (plantId: string) => {
+    if (growthBoostCount <= 0) {
+      Alert.alert('아이템 부족', '상점에서 무럭무럭 자라라를 구매해주세요.');
+      return;
+    }
+
+    const nextPlants = plants.map((plant) =>
+      plant.id === plantId
+        ? { ...plant, growthStage: 4, waterProgress: 100, sunProgress: 100 }
+        : plant
+    );
+    const nextCount = growthBoostCount - 1;
+    setPlants(nextPlants);
+    setGrowthBoostCount(nextCount);
+    await dbService.syncPlants(userId, nextPlants);
+    await dbService.updateControlSettings(userId, {
+      dpadScale,
+      menuButtonScale,
+      farmName,
+      waterCooldownReductionMs,
+      sunCooldownReductionMs,
+      growthBoostCount: nextCount,
+      welcomeGiftClaimed,
+    });
+    Alert.alert('무럭무럭!', '작물이 바로 수확 가능한 상태가 되었습니다.');
+  };
+
+  const handleClaimWelcomeGift = async () => {
+    if (welcomeGiftClaimed) {
+      Alert.alert('수령 완료', '신규 유저 선물은 한 번만 받을 수 있습니다.');
+      return;
+    }
+
+    const nextCount = growthBoostCount + 5;
+    setGrowthBoostCount(nextCount);
+    setWelcomeGiftClaimed(true);
+    await dbService.updateControlSettings(userId, {
+      dpadScale,
+      menuButtonScale,
+      farmName,
+      waterCooldownReductionMs,
+      sunCooldownReductionMs,
+      growthBoostCount: nextCount,
+      welcomeGiftClaimed: true,
+    });
+    Alert.alert('선물 수령 완료', '무럭무럭 자라라 5개를 창고에 넣었습니다.');
   };
 
   const handleSellHarvestedCrop = (crop: HarvestedCrop) => {
@@ -712,6 +815,10 @@ function GameApp({ session }: { session: Session }) {
     if (error) throw error;
   };
 
+  const handleDeleteAccount = async () => {
+    await dbService.deleteAccount();
+  };
+
   if (loading) {
     return (
       <View style={styles.gameLoadingScreen}>
@@ -754,7 +861,7 @@ function GameApp({ session }: { session: Session }) {
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="dark" />
 
-        {activeTab !== 'garden' && (
+        {activeTab !== 'garden' && activeTab !== 'explore' && (
           <View style={styles.topAppBar}>
             <TouchableOpacity style={styles.backToGardenBtn} onPress={() => setActiveTab('garden')}>
               <Ionicons name="chevron-back" size={18} color="#1B4332" />
@@ -780,6 +887,8 @@ function GameApp({ session }: { session: Session }) {
               menuButtonScale={menuButtonScale}
               waterCooldownReductionMs={waterCooldownReductionMs}
               sunCooldownReductionMs={sunCooldownReductionMs}
+              growthBoostCount={growthBoostCount}
+              welcomeGiftClaimed={welcomeGiftClaimed}
               onWater={handleWater}
               onSun={handleSun}
               onHarvest={handleHarvest}
@@ -789,6 +898,9 @@ function GameApp({ session }: { session: Session }) {
               onSellHarvestedCrop={handleSellHarvestedCrop}
               onBuySeed={handleBuySeed}
               onBuyCareCooldownUpgrade={handleBuyCareCooldownUpgrade}
+              onBuyGrowthBoost={handleBuyGrowthBoost}
+              onUseGrowthBoost={handleUseGrowthBoost}
+              onClaimWelcomeGift={handleClaimWelcomeGift}
               onChangeCharacter={() => {
                 setEditingCharacter(true);
                 setCharacterSurveyVisible(true);
@@ -807,6 +919,7 @@ function GameApp({ session }: { session: Session }) {
                 })
               }
               onLogout={handleLogout}
+              onDeleteAccount={handleDeleteAccount}
             />
           )}
 
@@ -814,10 +927,9 @@ function GameApp({ session }: { session: Session }) {
             <ExploreTab
               touristSpots={touristSpots}
               onCheckIn={handleCheckIn}
-              gpsStatusText={gpsStatusText}
+              onGoToGarden={() => setActiveTab('garden')}
               isGpsLoading={gpsLoading || loading}
               exploreRadiusMeters={exploreRadiusMeters}
-              onExploreRadiusChange={handleExploreRadiusChange}
               onRefreshNearby={() => loadGpsTouristSpots(touristSpots)}
             />
           )}
@@ -864,15 +976,15 @@ function GameApp({ session }: { session: Session }) {
           <View style={styles.tutorialBackdrop}>
             <View style={styles.tutorialCard}>
               <Text style={styles.tutorialEyebrow}>로컬 가든 시작하기</Text>
-              <Text style={styles.tutorialTitle}>정원사 이름을 알려주세요</Text>
+              <Text style={styles.tutorialTitle}>농장 이름을 정해주세요</Text>
               <Text style={styles.tutorialDesc}>
-                입력한 이름으로 농장 이름이 만들어집니다.
+                처음 정한 농장 이름은 설정에서 다시 변경할 수 있습니다.
               </Text>
               <TextInput
                 style={styles.nameInput}
                 value={nameDraft}
                 onChangeText={setNameDraft}
-                placeholder="예: 지민"
+                placeholder="예: 지민이의 농장"
                 placeholderTextColor="#94A3B8"
                 maxLength={10}
                 autoFocus
@@ -906,7 +1018,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingTop: Platform.OS === 'android' ? 25 : 0,
     width: '100%',
-    maxWidth: Platform.OS === 'web' ? 960 : undefined,
+    maxWidth: Platform.OS === 'web' ? WEB_PHONE_MAX_WIDTH : undefined,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,

@@ -11,31 +11,29 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { TouristSpot } from '../types';
 import { SeedVisual } from './SeedVisual';
+import { getDiscoveryRewardCount } from '../data/discoveryRewards';
 
 interface ExploreTabProps {
   touristSpots: TouristSpot[];
   onCheckIn: (spot: TouristSpot) => void | Promise<void>;
-  gpsStatusText: string;
+  onGoToGarden: () => void;
   isGpsLoading: boolean;
   exploreRadiusMeters: number;
-  onExploreRadiusChange: (radiusMeters: number) => void;
   onRefreshNearby: () => void;
 }
 
 type ExploreMode = NonNullable<TouristSpot['discoveryType']>;
-const RADIUS_OPTIONS = [1000, 3000, 5000, 10000, 20000];
 const formatRadiusLabel = (radiusMeters: number) => `${Math.round(radiusMeters / 1000)}km`;
 
 export const ExploreTab: React.FC<ExploreTabProps> = ({
   touristSpots,
   onCheckIn,
-  gpsStatusText,
+  onGoToGarden,
   isGpsLoading,
   exploreRadiusMeters,
-  onExploreRadiusChange,
   onRefreshNearby,
 }) => {
-  const [exploreMode, setExploreMode] = useState<ExploreMode>('popular');
+  const [exploreMode, setExploreMode] = useState<ExploreMode>('hiddenDiscovery');
   const modeCounts = touristSpots.reduce<Record<ExploreMode, number>>(
     (counts, spot) => {
       const spotMode = spot.discoveryType ?? 'hiddenDiscovery';
@@ -79,7 +77,17 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
       <View style={styles.header}>
         <View style={styles.headerBoard}>
           <Text style={styles.headerKicker}>관광 수요를 주변으로 넓히는 농장 의뢰</Text>
-          <Text style={styles.headerTitle}>숨은 관광지 탐험</Text>
+          <View style={styles.headerTitleRow}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={onGoToGarden}
+              accessibilityRole="button"
+              accessibilityLabel="농장으로 돌아가기"
+            >
+              <Ionicons name="chevron-back" size={25} color="#FFF8D9" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>숨은 관광지 탐험</Text>
+          </View>
           <Text style={styles.headerSub}>
             현재 GPS주변 한국관광공사에서 제공되는 관광지만 씨앗 보상으로 연결해요
           </Text>
@@ -127,40 +135,34 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
           </TouchableOpacity>
         </View>
 
-        <View style={styles.gpsPanel}>
-          <View style={styles.gpsTextRow}>
-            <Ionicons name="navigate-circle" size={18} color="#2D6840" />
-            <Text style={styles.gpsStatusText}>
-              {isGpsLoading ? 'GPS로 주변 관광지를 찾는 중...' : gpsStatusText}
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.refreshBtn} onPress={onRefreshNearby}>
-            <Ionicons name="refresh" size={15} color="#FFF8D9" />
-            <Text style={styles.refreshBtnText}>새로고침</Text>
-          </TouchableOpacity>
-        </View>
-
         <View style={styles.radiusPanel}>
           <View style={styles.radiusTitleRow}>
-            <Ionicons name="radio-button-on" size={15} color="#2D6840" />
-            <Text style={styles.radiusTitle}>탐험 거리</Text>
+            <View style={styles.radiusTitleLabel}>
+              <Ionicons name="radio-button-on" size={15} color="#2D6840" />
+              <Text style={styles.radiusTitle}>탐험 거리</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.searchButton, isGpsLoading && styles.searchButtonLoading]}
+              onPress={onRefreshNearby}
+              disabled={isGpsLoading}
+              accessibilityRole="button"
+              accessibilityLabel={isGpsLoading ? '검색중' : '주변 관광지 검색'}
+            >
+              <Ionicons
+                name={isGpsLoading ? 'hourglass-outline' : 'search'}
+                size={15}
+                color="#FFF8D9"
+              />
+              <Text style={styles.searchButtonText}>{isGpsLoading ? '검색중' : '검색'}</Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.radiusOptions}>
-            {RADIUS_OPTIONS.map((radius) => {
-              const isActive = radius === exploreRadiusMeters;
-              return (
-                <TouchableOpacity
-                  key={radius}
-                  style={[styles.radiusChip, isActive && styles.radiusChipActive]}
-                  onPress={() => onExploreRadiusChange(radius)}
-                  disabled={isGpsLoading}
-                >
-                  <Text style={[styles.radiusChipText, isActive && styles.radiusChipTextActive]}>
-                    {formatRadiusLabel(radius)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+            <View style={[styles.radiusChip, styles.radiusChipActive]}>
+              <Text style={[styles.radiusChipText, styles.radiusChipTextActive]}>
+                5km 먼저 · 부족하면 10km 자동 확장
+              </Text>
+            </View>
+            <Text style={styles.radiusChipText}>현재 {formatRadiusLabel(exploreRadiusMeters)}</Text>
           </View>
         </View>
 
@@ -249,7 +251,9 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                 </View>
                 <View style={styles.rewardTextBlock}>
                   <Text style={styles.rewardLabel}>의뢰 보상</Text>
-                  <Text style={styles.rewardSeedName}>{spot.seedName}</Text>
+                  <Text style={styles.rewardSeedName}>
+                    {spot.seedName} × {getDiscoveryRewardCount(spot)}
+                  </Text>
                 </View>
               </View>
               <View style={styles.actionRow}>
@@ -288,7 +292,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
             </View>
             <Text style={styles.emptyTitle}>GPS 기반 관광지가 아직 없어요</Text>
             <Text style={styles.emptyText}>
-              위치 권한을 허용하고 새로고침을 눌러주세요. 현재 위치 주변 TourAPI 결과를 Gemini가 분류한 장소만 보여줍니다.
+              위치 권한을 허용하고 검색을 눌러주세요. 현재 위치 주변 TourAPI 결과를 Groq가 분류한 장소만 보여줍니다.
             </Text>
             <TouchableOpacity style={styles.emptyButton} onPress={onRefreshNearby}>
               <Ionicons name="refresh" size={15} color="#FFF8D9" />
@@ -308,17 +312,17 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#78B96A',
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 14,
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
   headerBoard: {
     backgroundColor: '#2D6840',
     borderRadius: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    marginBottom: 12,
-    borderWidth: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 6,
+    borderWidth: 2,
     borderColor: '#1F4E31',
     shadowColor: '#2E2718',
     shadowOffset: { width: 0, height: 4 },
@@ -327,41 +331,47 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   headerKicker: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#F7D878',
-    marginBottom: 4,
+    display: 'none',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '800',
     color: '#FFF8D9',
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  backButton: {
+    width: 26,
+    height: 28,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
   headerSub: {
-    fontSize: 13,
-    color: '#DCEEC5',
-    marginTop: 4,
+    display: 'none',
   },
   modeTabs: {
     flexDirection: 'row',
     backgroundColor: '#E6F5C9',
     borderRadius: 8,
-    padding: 4,
-    marginBottom: 12,
-    borderWidth: 2,
+    padding: 3,
+    marginBottom: 6,
+    borderWidth: 1,
     borderColor: '#5E8E42',
     gap: 4,
   },
   modeTab: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 32,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFF8D9',
     borderRadius: 7,
     gap: 5,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#D5B66E',
     paddingHorizontal: 6,
   },
@@ -370,7 +380,7 @@ const styles = StyleSheet.create({
     borderColor: '#6B3F1D',
   },
   modeTabText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
     color: '#6B4A23',
     textAlign: 'center',
@@ -378,89 +388,77 @@ const styles = StyleSheet.create({
   modeTabTextActive: {
     color: '#FFF8D9',
   },
-  gpsPanel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#E6F5C9',
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#5E8E42',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-    gap: 10,
-  },
-  gpsTextRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  gpsStatusText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#24492E',
-  },
-  refreshBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2D6840',
-    borderRadius: 7,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    gap: 4,
-    borderWidth: 2,
-    borderColor: '#1F4E31',
-  },
-  refreshBtnText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#FFF8D9',
-  },
   radiusPanel: {
     backgroundColor: '#FFF8D9',
     borderRadius: 8,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#D5B66E',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-    gap: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 4,
+    gap: 5,
   },
   radiusTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  radiusTitleLabel: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
   radiusTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
     color: '#24492E',
   },
+  searchButton: {
+    minWidth: 62,
+    height: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    backgroundColor: '#2D6840',
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#1F4E31',
+  },
+  searchButtonLoading: {
+    backgroundColor: '#6B7D55',
+    borderColor: '#506040',
+  },
+  searchButtonText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#FFF8D9',
+  },
   radiusOptions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
+    justifyContent: 'space-between',
+    gap: 4,
   },
   radiusChip: {
-    minWidth: 54,
-    height: 34,
+    flex: 1,
+    minWidth: 0,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F6E8B7',
     borderRadius: 7,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#D5B66E',
-    paddingHorizontal: 10,
+    paddingHorizontal: 2,
   },
   radiusChipActive: {
     backgroundColor: '#2D6840',
     borderColor: '#1F4E31',
   },
   radiusChipText: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#6B4A23',
     fontWeight: '900',
   },
@@ -468,37 +466,37 @@ const styles = StyleSheet.create({
     color: '#FFF8D9',
   },
   listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 14,
+    paddingHorizontal: 10,
+    paddingTop: 4,
     paddingBottom: 40,
   },
   listHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
     backgroundColor: 'rgba(255, 248, 217, 0.62)',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
     borderColor: 'rgba(107, 74, 35, 0.2)',
   },
   listCount: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#466233',
     fontWeight: '800',
   },
   listCountStrong: {
-    fontSize: 15,
+    fontSize: 13,
     color: '#24492E',
     fontWeight: '900',
   },
   listDescription: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#466233',
     fontWeight: '700',
-    marginTop: 2,
+    marginTop: 0,
   },
   spotCard: {
     backgroundColor: '#FFF8D9',

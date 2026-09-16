@@ -32,6 +32,12 @@
     "plugins": [
       "expo-web-browser",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e7e0c7d3-d941-4d41-a5cd-ba6842bdd0cc"
+      }
+    },
+    "owner": "jeonggyu11"
   }
 }
