@@ -129,15 +129,56 @@ ${JSON.stringify(spots)}`;
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`Groq request failed: ${response.status} ${await response.text()}`);
+    if (response.ok) {
+      const json = await response.json();
+      const content = json?.choices?.[0]?.message?.content;
+      if (typeof content !== 'string') throw new Error('Groq returned no content');
+      return Response.json(JSON.parse(content), {
+        headers: { ...corsHeaders, 'X-Curation-Provider': 'groq' },
+      });
     }
 
-    const json = await response.json();
-    const content = json?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') throw new Error('Groq returned no content');
+    const groqError = `${response.status} ${await response.text()}`;
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!geminiApiKey) {
+      throw new Error(`Groq request failed: ${groqError}; GEMINI_API_KEY is not configured`);
+    }
 
-    return Response.json(JSON.parse(content), { headers: corsHeaders });
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': geminiApiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 12000,
+            responseMimeType: 'application/json',
+          },
+        }),
+      }
+    );
+    if (!geminiResponse.ok) {
+      throw new Error(
+        `Groq request failed: ${groqError}; Gemini request failed: ${geminiResponse.status} ${await geminiResponse.text()}`
+      );
+    }
+
+    const geminiJson = await geminiResponse.json();
+    const geminiContent = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (typeof geminiContent !== 'string') {
+      throw new Error(
+        `Groq request failed: ${groqError}; Gemini returned no content (${geminiJson?.candidates?.[0]?.finishReason ?? 'unknown'})`
+      );
+    }
+
+    return Response.json(JSON.parse(geminiContent), {
+      headers: { ...corsHeaders, 'X-Curation-Provider': 'gemini' },
+    });
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },

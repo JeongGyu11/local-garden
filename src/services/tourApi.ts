@@ -1,12 +1,6 @@
 import { SeedVisual, TouristSpot } from '../types';
-import { curateTouristSpotsWithGemini } from './geminiApi';
 import { curateTouristSpotsWithGroq } from './groqApi';
-
-declare const process: {
-  env?: {
-    EXPO_PUBLIC_TOUR_API_KEY?: string;
-  };
-};
+import { supabase } from '../lib/supabase';
 
 type SupportedRegion = TouristSpot['region'];
 
@@ -28,8 +22,6 @@ interface RegionConfig {
   seedName: string;
   seedEmoji: string;
 }
-
-const TOUR_API_BASE = 'https://apis.data.go.kr/B551011/KorService2';
 
 const REGION_CONFIGS: RegionConfig[] = [
   { areaCode: '39', region: '제주', seedName: '제주 감귤 씨앗', seedEmoji: '🍊' },
@@ -93,34 +85,11 @@ const CATEGORY_LABELS: Record<string, string> = {
   A0208: '레포츠',
 };
 
-const getApiKey = () => {
-  if (typeof process === 'undefined') {
-    return '';
-  }
-  return process.env?.EXPO_PUBLIC_TOUR_API_KEY?.trim() ?? '';
-};
-
 const toArray = (items: TourApiRawItem | TourApiRawItem[] | undefined) => {
   if (!items) {
     return [];
   }
   return Array.isArray(items) ? items : [items];
-};
-
-const buildTourApiUrl = (path: string, params: Record<string, string>) => {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error('TourAPI key is missing.');
-  }
-
-  const query = new URLSearchParams({
-    MobileOS: 'ETC',
-    MobileApp: 'LocalGarden',
-    _type: 'json',
-    ...params,
-  });
-
-  return `${TOUR_API_BASE}/${path}?serviceKey=${apiKey}&${query.toString()}`;
 };
 
 const isPopularSpot = (title: string) =>
@@ -533,28 +502,25 @@ export async function fetchNearbyHiddenTouristSpots(
   longitude: number,
   radiusMeters = 20000
 ): Promise<TouristSpot[]> {
-  const url = buildTourApiUrl('locationBasedList2', {
-    numOfRows: '300',
-    pageNo: '1',
-    arrange: 'E',
-    contentTypeId: '12',
-    mapX: String(longitude),
-    mapY: String(latitude),
-    radius: String(radiusMeters),
-  });
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`TourAPI nearby request failed: ${response.status}`);
+  const { data, error } = await supabase.functions.invoke<{ items?: TourApiRawItem[] }>(
+    'nearby-tourist-spots',
+    { body: { latitude, longitude, radiusMeters } }
+  );
+  if (error) {
+    const context = (error as { context?: Response }).context;
+    let detail = error.message;
+    if (context) {
+      try {
+        const body = await context.clone().text();
+        detail = `HTTP ${context.status}${body.trim() ? ` · ${body.trim()}` : ''}`;
+      } catch {
+        // Keep the SDK error message when the response body cannot be read.
+      }
+    }
+    throw new Error(`TourAPI proxy failed: ${detail}`);
   }
 
-  const json = await response.json();
-  const resultCode = json?.response?.header?.resultCode;
-  if (resultCode && resultCode !== '0000') {
-    throw new Error(json?.response?.header?.resultMsg ?? 'TourAPI nearby result error');
-  }
-
-  const items = toArray(json?.response?.body?.items?.item);
+  const items = toArray(data?.items);
   const spots = selectDistanceSpreadCandidates(items, radiusMeters)
     .map((item) => {
       const config = getRegionConfigFromAddress(item.addr1 ?? '');
@@ -574,12 +540,7 @@ export async function fetchNearbyHiddenTouristSpots(
   try {
     return await curateTouristSpotsWithGroq(spots);
   } catch (groqErr) {
-    console.warn('Groq 관광지 큐레이션 실패 (2차 Gemini API로 전환합니다):', groqErr);
-    try {
-      return await curateTouristSpotsWithGemini(spots);
-    } catch (geminiErr) {
-      console.warn('Gemini 관광지 큐레이션 실패 (3차 로컬 규칙으로 전환합니다):', geminiErr);
-      return applyFamousAnchorDiscoveryRules(spots);
-    }
+    console.warn('서버 LLM 관광지 큐레이션 실패 (로컬 규칙으로 전환합니다):', groqErr);
+    return applyFamousAnchorDiscoveryRules(spots);
   }
 }
