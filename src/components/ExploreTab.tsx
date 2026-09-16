@@ -201,15 +201,17 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
 
               <View style={styles.spotInfo}>
                 <View style={styles.spotTop}>
-                  <View style={styles.badgeRow}>
-                    {spot.discoveryType === 'nearPopular' && spot.anchorName && (
-                      <View style={styles.anchorBadge}>
-                        <Ionicons name="flag" size={11} color="#FFF8D9" />
-                        <Text style={styles.anchorText}>{spot.anchorName} 옆</Text>
+                  <View style={styles.spotMeta}>
+                    <View style={styles.badgeRow}>
+                      {spot.discoveryType === 'nearPopular' && spot.anchorName && (
+                        <View style={styles.anchorBadge}>
+                          <Ionicons name="flag" size={11} color="#FFF8D9" />
+                          <Text style={styles.anchorText}>{spot.anchorName} 옆</Text>
+                        </View>
+                      )}
+                      <View style={styles.categoryBadge}>
+                        <Text style={styles.categoryText}>{spot.category}</Text>
                       </View>
-                    )}
-                    <View style={styles.categoryBadge}>
-                      <Text style={styles.categoryText}>{spot.category}</Text>
                     </View>
                     <View style={styles.distanceBadge}>
                       <Ionicons name="location-outline" size={12} color="#64748B" />
@@ -540,6 +542,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  spotMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
   spotImage: {
     width: 178,
     height: 178,
@@ -600,10 +606,13 @@ const styles = StyleSheet.create({
   },
   distanceBadge: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 2,
+    marginTop: 5,
+    maxWidth: '100%',
   },
   distanceText: {
+    flexShrink: 1,
     fontSize: 11,
     color: '#6B4A23',
     fontWeight: '700',
