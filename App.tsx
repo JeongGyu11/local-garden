@@ -59,6 +59,7 @@ const DEFAULT_EXPLORE_RADIUS_METERS = 5000;
 const CARE_PROGRESS_STEP = 50;
 const WEB_PHONE_MAX_WIDTH = 430;
 const CROP_LOSS_COMPENSATION_CUTOFF = '2026-09-17T00:32:22.905Z';
+const SEOL_BEOMJUN_USER_ID = 'bc97dee1-473a-4b5f-b9c3-1b16753ef037';
 const LEGACY_DEFAULT_PLANT_IDS = new Set(['p1', 'p2']);
 const LEGACY_DEFAULT_SEED_IDS = new Set(['s1']);
 
@@ -185,6 +186,10 @@ function GameApp({ session }: { session: Session }) {
   const [welcomeGiftClaimed, setWelcomeGiftClaimed] = useState(false);
   const [cropLossCompensationClaimed, setCropLossCompensationClaimed] = useState(false);
   const [claimingCropLossCompensation, setClaimingCropLossCompensation] = useState(false);
+  const [seolBeomjunSeedCompensationClaimed, setSeolBeomjunSeedCompensationClaimed] =
+    useState(false);
+  const [claimingSeolBeomjunSeedCompensation, setClaimingSeolBeomjunSeedCompensation] =
+    useState(false);
   const [readNoticeIds, setReadNoticeIds] = useState<string[]>([]);
   const [farmName, setFarmName] = useState('나의 농장');
   const [petSurveyVisible, setPetSurveyVisible] = useState(false);
@@ -292,7 +297,9 @@ function GameApp({ session }: { session: Session }) {
           );
           setSeeds(cleanedSeeds);
           if (cleanedSeeds.length !== result.data.seeds.length) {
-            dbService.syncSeeds(userId, cleanedSeeds);
+            void dbService.syncSeeds(userId, cleanedSeeds).catch((error) => {
+              console.warn('Seed cleanup sync failed:', error);
+            });
           }
           setFarmerName(result.data.farmerName);
           setNameDraft(result.data.hasCustomFarmName ? result.data.farmName : '');
@@ -316,6 +323,9 @@ function GameApp({ session }: { session: Session }) {
           setGrowthBoostCount(result.data.growthBoostCount);
           setWelcomeGiftClaimed(result.data.welcomeGiftClaimed);
           setCropLossCompensationClaimed(result.data.cropLossCompensationClaimed);
+          setSeolBeomjunSeedCompensationClaimed(
+            result.data.seolBeomjunSeedCompensationClaimed
+          );
           setReadNoticeIds(result.data.readNoticeIds);
           setFarmName(result.data.farmName);
           setPetSurveyVisible(!needsCharacter && !result.data.petId);
@@ -559,17 +569,7 @@ function GameApp({ session }: { session: Session }) {
       return;
     }
 
-    // 방문 처리
-    setTouristSpots((prev) =>
-      prev.map((s) => (s.id === spot.id ? { ...s, visited: true } : s))
-    );
-    setCheckInCooldownUntil((prev) => ({
-      ...prev,
-      [spot.id]: Date.now() + CHECK_IN_COOLDOWN_MS,
-    }));
-    dbService.checkInSpot(userId, spot.id, spot.title, spot.region);
-
-    // 씨앗 생성 및 지급 & 동기화
+    // 씨앗 생성 후 DB 저장이 성공해야 방문 완료와 보상을 화면에 반영한다.
     const rewardCount = getDiscoveryRewardCount(spot);
     const rewardTimestamp = Date.now();
     const newSeeds: Seed[] = Array.from({ length: rewardCount }, (_, index) => ({
@@ -581,8 +581,29 @@ function GameApp({ session }: { session: Session }) {
       description: `${spot.title} 방문 인증으로 획득한 귀한 특산 씨앗`,
     }));
     const nextSeeds = [...newSeeds, ...seeds];
+
+    try {
+      await dbService.checkInSpot(userId, spot.id, spot.title, spot.region);
+      await dbService.saveSeeds(userId, newSeeds);
+    } catch (error) {
+      console.warn('Check-in reward save failed:', error);
+      setCheckInNotice({
+        title: '보상 저장 실패',
+        message: '방문 보상을 저장하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.',
+      });
+      return;
+    }
+
+    setTouristSpots((prev) =>
+      prev.map((savedSpot) =>
+        savedSpot.id === spot.id ? { ...savedSpot, visited: true } : savedSpot
+      )
+    );
+    setCheckInCooldownUntil((prev) => ({
+      ...prev,
+      [spot.id]: Date.now() + CHECK_IN_COOLDOWN_MS,
+    }));
     setSeeds(nextSeeds);
-    dbService.syncSeeds(userId, nextSeeds);
 
     // 도감 잠금 해제 & 동기화
     const nextEnc = encyclopedia.map((item) =>
@@ -793,6 +814,34 @@ function GameApp({ session }: { session: Session }) {
     }
   };
 
+  const handleClaimSeolBeomjunSeedCompensation = async () => {
+    if (userId !== SEOL_BEOMJUN_USER_ID || seolBeomjunSeedCompensationClaimed) return;
+    if (claimingSeolBeomjunSeedCompensation) return;
+
+    setClaimingSeolBeomjunSeedCompensation(true);
+    try {
+      const result = await dbService.claimSeolBeomjunSeedCompensation(userId);
+      if (result.seeds.length > 0) {
+        setSeeds((currentSeeds) => {
+          const rewardIds = new Set(result.seeds.map((seed) => seed.id));
+          return [...result.seeds, ...currentSeeds.filter((seed) => !rewardIds.has(seed.id))];
+        });
+      }
+      setSeolBeomjunSeedCompensationClaimed(true);
+      Alert.alert(
+        result.alreadyClaimed ? '수령 완료' : '씨앗 보상 수령 완료',
+        result.alreadyClaimed
+          ? '이미 받은 보상입니다.'
+          : '로컬 씨앗 4개와 가든 씨앗 4개를 보관함에 넣었습니다.'
+      );
+    } catch (error) {
+      console.warn('Seed compensation claim failed:', error);
+      Alert.alert('수령 실패', '씨앗 보상을 저장하지 못했습니다. 다시 시도해주세요.');
+    } finally {
+      setClaimingSeolBeomjunSeedCompensation(false);
+    }
+  };
+
   const handleMarkNoticeRead = async (noticeId: string) => {
     if (readNoticeIds.includes(noticeId)) return;
     try {
@@ -816,7 +865,7 @@ function GameApp({ session }: { session: Session }) {
     Alert.alert('판매 완료', `${crop.name}을(를) 판매해 ${HARVEST_SELL_PRICE}G를 벌었습니다.`);
   };
 
-  const handleBuySeed = (seed: Seed, price: number) => {
+  const handleBuySeed = async (seed: Seed, price: number) => {
     if (money < price) {
       Alert.alert('골드가 부족해요', `${price - money}G가 더 필요합니다.`);
       return;
@@ -824,10 +873,21 @@ function GameApp({ session }: { session: Session }) {
     const purchasedSeed = { ...seed, id: `${seed.id}_${Date.now()}` };
     const nextSeeds = [purchasedSeed, ...seeds];
     const nextMoney = money - price;
+    try {
+      await dbService.saveSeeds(userId, [purchasedSeed]);
+      await dbService.updateGameState(userId, { money: nextMoney });
+    } catch (error) {
+      console.warn('Seed purchase save failed:', error);
+      try {
+        await dbService.deleteSeed(userId, purchasedSeed.id);
+      } catch (rollbackError) {
+        console.warn('Seed purchase rollback failed:', rollbackError);
+      }
+      Alert.alert('구매 저장 실패', '골드와 씨앗을 저장하지 못했습니다. 다시 시도해주세요.');
+      return;
+    }
     setSeeds(nextSeeds);
     setMoney(nextMoney);
-    dbService.syncSeeds(userId, nextSeeds);
-    dbService.updateGameState(userId, { money: nextMoney });
     Alert.alert('구매 완료', `${seed.name}을(를) 가방에 넣었습니다.`);
   };
 
@@ -953,6 +1013,10 @@ function GameApp({ session }: { session: Session }) {
                 isCropLossCompensationEligible && !cropLossCompensationClaimed
               }
               claimingCropLossCompensation={claimingCropLossCompensation}
+              showSeolBeomjunSeedCompensation={
+                userId === SEOL_BEOMJUN_USER_ID && !seolBeomjunSeedCompensationClaimed
+              }
+              claimingSeolBeomjunSeedCompensation={claimingSeolBeomjunSeedCompensation}
               readNoticeIds={readNoticeIds}
               onWater={handleWater}
               onSun={handleSun}
@@ -967,6 +1031,7 @@ function GameApp({ session }: { session: Session }) {
               onUseGrowthBoost={handleUseGrowthBoost}
               onClaimWelcomeGift={handleClaimWelcomeGift}
               onClaimCropLossCompensation={handleClaimCropLossCompensation}
+              onClaimSeolBeomjunSeedCompensation={handleClaimSeolBeomjunSeedCompensation}
               onMarkNoticeRead={handleMarkNoticeRead}
               onChangeCharacter={() => {
                 setEditingCharacter(true);

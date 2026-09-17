@@ -18,6 +18,8 @@ import {
   INITIAL_COUPONS,
 } from '../data/mockData';
 
+const SEOL_BEOMJUN_USER_ID = 'bc97dee1-473a-4b5f-b9c3-1b16753ef037';
+
 const toPlantRow = (userId: string, plant: Plant) => ({
   id: plant.id,
   user_id: userId,
@@ -33,6 +35,16 @@ const toPlantRow = (userId: string, plant: Plant) => ({
   last_sunned_at: plant.lastSunnedAt,
   harvest_reward: plant.harvestReward,
   plot_index: plant.plotIndex,
+});
+
+const toSeedRow = (userId: string, seed: Seed) => ({
+  id: seed.id,
+  user_id: userId,
+  name: seed.name,
+  region: seed.region,
+  emoji: seed.emoji,
+  description: seed.description,
+  visual: seed.visual,
 });
 
 export const dbService = {
@@ -101,6 +113,8 @@ export const dbService = {
       const welcomeGiftClaimed = savedSettings.welcomeGiftClaimed === true;
       const cropLossCompensationClaimed =
         savedSettings.cropLossCompensationClaimed === true;
+      const seolBeomjunSeedCompensationClaimed =
+        savedSettings.seolBeomjunSeedCompensationClaimed === true;
       const readNoticeIds = Array.isArray(savedSettings.readNoticeIds)
         ? savedSettings.readNoticeIds.filter(
             (id: unknown): id is string => typeof id === 'string'
@@ -151,10 +165,12 @@ export const dbService = {
       }
 
       // 1-3. 씨앗(Seeds) 조회
-      const { data: seedsData } = await supabase
+      const { data: seedsData, error: seedsError } = await supabase
         .from('seeds')
         .select('*')
         .eq('user_id', userId);
+
+      if (seedsError) throw seedsError;
 
       let seeds: Seed[] = [];
       if (seedsData && seedsData.length > 0) {
@@ -166,9 +182,6 @@ export const dbService = {
           description: s.description,
           visual: s.visual,
         }));
-      } else {
-        seeds = INITIAL_SEEDS;
-        await this.syncSeeds(userId, INITIAL_SEEDS);
       }
 
       // 1-4. 방문 관광지(Visited Spots) 조회
@@ -261,6 +274,7 @@ export const dbService = {
           growthBoostCount,
           welcomeGiftClaimed,
           cropLossCompensationClaimed,
+          seolBeomjunSeedCompensationClaimed,
           readNoticeIds,
           farmName,
           hasCustomFarmName,
@@ -291,6 +305,7 @@ export const dbService = {
           growthBoostCount: 0,
           welcomeGiftClaimed: false,
           cropLossCompensationClaimed: false,
+          seolBeomjunSeedCompensationClaimed: false,
           readNoticeIds: [],
           farmName: '나의 농장',
           hasCustomFarmName: false,
@@ -384,6 +399,72 @@ export const dbService = {
     if (saveError) throw saveError;
 
     return { alreadyClaimed: false, growthBoostCount };
+  },
+
+  async claimSeolBeomjunSeedCompensation(userId: string) {
+    if (userId !== SEOL_BEOMJUN_USER_ID) {
+      throw new Error('This compensation is not available for this account.');
+    }
+
+    const { data: gameState, error: loadError } = await supabase
+      .from('game_states')
+      .select('settings')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (loadError) throw loadError;
+
+    const settings =
+      gameState?.settings && typeof gameState.settings === 'object'
+        ? gameState.settings
+        : {};
+    if (settings.seolBeomjunSeedCompensationClaimed === true) {
+      return { alreadyClaimed: true, seeds: [] as Seed[] };
+    }
+
+    const localVisual = {
+      theme: 'local' as const,
+      primaryColor: '#6E9F44',
+      secondaryColor: '#F2D36B',
+      accentColor: '#FFF8D9',
+      pattern: 'leaf' as const,
+    };
+    const gardenVisual = {
+      theme: 'festival' as const,
+      primaryColor: '#D946EF',
+      secondaryColor: '#38BDF8',
+      accentColor: '#FDE047',
+      pattern: 'sparkle' as const,
+    };
+    const rewardSeeds: Seed[] = [
+      ...Array.from({ length: 4 }, (_, index) => ({
+        id: `comp_seolbeomjun_local_${index + 1}`,
+        name: '로컬 씨앗',
+        region: '전국',
+        emoji: '🌾',
+        description: '작물 저장 오류에 대한 운영 보상 로컬 씨앗',
+        visual: localVisual,
+      })),
+      ...Array.from({ length: 4 }, (_, index) => ({
+        id: `comp_seolbeomjun_garden_${index + 1}`,
+        name: '가든 씨앗',
+        region: '전국',
+        emoji: '🌻',
+        description: '작물 저장 오류에 대한 운영 보상 가든 씨앗',
+        visual: gardenVisual,
+      })),
+    ];
+
+    await this.saveSeeds(userId, rewardSeeds);
+    const { error: saveError } = await supabase
+      .from('game_states')
+      .upsert({
+        user_id: userId,
+        settings: { ...settings, seolBeomjunSeedCompensationClaimed: true },
+        updated_at: new Date().toISOString(),
+      });
+    if (saveError) throw saveError;
+
+    return { alreadyClaimed: false, seeds: rewardSeeds };
   },
 
   async markNoticeRead(userId: string, noticeId: string) {
@@ -520,39 +601,47 @@ export const dbService = {
     if (error) throw error;
   },
 
+  async saveSeeds(userId: string, seeds: Seed[]) {
+    if (seeds.length === 0) return;
+    const { error } = await supabase
+      .from('seeds')
+      .upsert(seeds.map((seed) => toSeedRow(userId, seed)));
+    if (error) throw error;
+  },
+
   // 씨앗 동기화
   async syncSeeds(userId: string, seeds: Seed[]) {
-    try {
-      await supabase.from('seeds').delete().eq('user_id', userId);
-      if (seeds.length > 0) {
-        const rows = seeds.map((s) => ({
-          id: s.id,
-          user_id: userId,
-          name: s.name,
-          region: s.region,
-          emoji: s.emoji,
-          description: s.description,
-          visual: s.visual,
-        }));
-        await supabase.from('seeds').insert(rows);
-      }
-    } catch (e) {
-      console.error('syncSeeds error:', e);
+    await this.saveSeeds(userId, seeds);
+
+    const { data: savedSeeds, error: selectError } = await supabase
+      .from('seeds')
+      .select('id')
+      .eq('user_id', userId);
+    if (selectError) throw selectError;
+
+    const currentIds = new Set(seeds.map((seed) => seed.id));
+    const removedIds = (savedSeeds ?? [])
+      .map((seed) => seed.id)
+      .filter((id) => !currentIds.has(id));
+    if (removedIds.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('seeds')
+        .delete()
+        .eq('user_id', userId)
+        .in('id', removedIds);
+      if (deleteError) throw deleteError;
     }
   },
 
   // 관광지 체크인 기록 저장
   async checkInSpot(userId: string, spotId: string, spotTitle: string, region: string) {
-    try {
-      await supabase.from('visited_spots').upsert({
-        user_id: userId,
-        spot_id: spotId,
-        spot_title: spotTitle,
-        region: region,
-      });
-    } catch (e) {
-      console.error('checkInSpot error:', e);
-    }
+    const { error } = await supabase.from('visited_spots').upsert({
+      user_id: userId,
+      spot_id: spotId,
+      spot_title: spotTitle,
+      region: region,
+    });
+    if (error) throw error;
   },
 
   // 쿠폰 동기화 및 추가

@@ -41,6 +41,8 @@ interface AnimalCrossingGardenProps {
   welcomeGiftClaimed: boolean;
   showCropLossCompensation: boolean;
   claimingCropLossCompensation: boolean;
+  showSeolBeomjunSeedCompensation: boolean;
+  claimingSeolBeomjunSeedCompensation: boolean;
   readNoticeIds: string[];
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
@@ -55,6 +57,7 @@ interface AnimalCrossingGardenProps {
   onUseGrowthBoost: (plantId: string) => void | Promise<void>;
   onClaimWelcomeGift: () => void | Promise<void>;
   onClaimCropLossCompensation: () => void | Promise<void>;
+  onClaimSeolBeomjunSeedCompensation: () => void | Promise<void>;
   onMarkNoticeRead: (noticeId: string) => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
@@ -183,6 +186,8 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   welcomeGiftClaimed,
   showCropLossCompensation,
   claimingCropLossCompensation,
+  showSeolBeomjunSeedCompensation,
+  claimingSeolBeomjunSeedCompensation,
   readNoticeIds,
   onWater,
   onSun,
@@ -197,6 +202,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   onUseGrowthBoost,
   onClaimWelcomeGift,
   onClaimCropLossCompensation,
+  onClaimSeolBeomjunSeedCompensation,
   onMarkNoticeRead,
   onChangeCharacter,
   onChangePet,
@@ -227,6 +233,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const [menuButtonScale, setMenuButtonScale] = useState(initialMenuButtonScale);
   const mailboxGlow = useRef(new Animated.Value(0.25)).current;
   const hasUnreadNotice =
+    showSeolBeomjunSeedCompensation ||
     showCropLossCompensation ||
     !welcomeGiftClaimed ||
     !readNoticeIds.includes(GROWTH_BOOST_NOTICE_ID) ||
@@ -1223,6 +1230,32 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
               </Pressable>
             </View>
             <ScrollView style={styles.noticeBoardContent} showsVerticalScrollIndicator={false}>
+              {showSeolBeomjunSeedCompensation && (
+                <View style={styles.giftInboxCard}>
+                  <View style={styles.giftInboxIcon}>
+                    <Ionicons name="gift" size={27} color="#FFF7D6" />
+                  </View>
+                  <View style={styles.giftInboxCopy}>
+                    <Text style={styles.giftInboxEyebrow}>설범준 정원사님 전용 복구 보상</Text>
+                    <Text style={styles.giftInboxTitle}>로컬 씨앗 × 4 · 가든 씨앗 × 4</Text>
+                    <Text style={styles.giftInboxDescription}>
+                      업데이트 과정에서 발생한 작물 저장 오류에 대한 복구 보상입니다. 계정당 한 번만 받을 수 있습니다.
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.giftClaimButton,
+                      claimingSeolBeomjunSeedCompensation && styles.giftClaimButtonDisabled,
+                    ]}
+                    disabled={claimingSeolBeomjunSeedCompensation}
+                    onPress={() => handlePlainPress(onClaimSeolBeomjunSeedCompensation)}
+                  >
+                    <Text style={styles.giftClaimButtonText}>
+                      {claimingSeolBeomjunSeedCompensation ? '지급 중' : '확인·받기'}
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
               {showCropLossCompensation && (
                 <View style={styles.giftInboxCard}>
                   <View style={styles.giftInboxIcon}>
