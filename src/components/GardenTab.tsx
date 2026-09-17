@@ -29,6 +29,7 @@ interface GardenTabProps {
   welcomeGiftClaimed: boolean;
   showCropLossCompensation: boolean;
   claimingCropLossCompensation: boolean;
+  readNoticeIds: string[];
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
@@ -42,6 +43,7 @@ interface GardenTabProps {
   onUseGrowthBoost: (plantId: string) => void | Promise<void>;
   onClaimWelcomeGift: () => void | Promise<void>;
   onClaimCropLossCompensation: () => void | Promise<void>;
+  onMarkNoticeRead: (noticeId: string) => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
   onChangeFarmName: (farmName: string) => Promise<void>;
@@ -75,6 +77,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   welcomeGiftClaimed,
   showCropLossCompensation,
   claimingCropLossCompensation,
+  readNoticeIds,
   onWater,
   onSun,
   onHarvest,
@@ -88,6 +91,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   onUseGrowthBoost,
   onClaimWelcomeGift,
   onClaimCropLossCompensation,
+  onMarkNoticeRead,
   onChangeCharacter,
   onChangePet,
   onChangeFarmName,
@@ -160,6 +164,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           welcomeGiftClaimed={welcomeGiftClaimed}
           showCropLossCompensation={showCropLossCompensation}
           claimingCropLossCompensation={claimingCropLossCompensation}
+          readNoticeIds={readNoticeIds}
           onWater={onWater}
           onSun={onSun}
           onHarvest={onHarvest}
@@ -173,6 +178,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           onUseGrowthBoost={onUseGrowthBoost}
           onClaimWelcomeGift={onClaimWelcomeGift}
           onClaimCropLossCompensation={onClaimCropLossCompensation}
+          onMarkNoticeRead={onMarkNoticeRead}
           onChangeCharacter={onChangeCharacter}
           onChangePet={onChangePet}
           onChangeFarmName={onChangeFarmName}

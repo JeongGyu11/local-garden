@@ -101,6 +101,11 @@ export const dbService = {
       const welcomeGiftClaimed = savedSettings.welcomeGiftClaimed === true;
       const cropLossCompensationClaimed =
         savedSettings.cropLossCompensationClaimed === true;
+      const readNoticeIds = Array.isArray(savedSettings.readNoticeIds)
+        ? savedSettings.readNoticeIds.filter(
+            (id: unknown): id is string => typeof id === 'string'
+          )
+        : [];
       const farmName =
         typeof savedSettings.farmName === 'string' && savedSettings.farmName.trim()
           ? savedSettings.farmName.trim()
@@ -256,6 +261,7 @@ export const dbService = {
           growthBoostCount,
           welcomeGiftClaimed,
           cropLossCompensationClaimed,
+          readNoticeIds,
           farmName,
           hasCustomFarmName,
         },
@@ -285,6 +291,7 @@ export const dbService = {
           growthBoostCount: 0,
           welcomeGiftClaimed: false,
           cropLossCompensationClaimed: false,
+          readNoticeIds: [],
           farmName: '나의 농장',
           hasCustomFarmName: false,
         },
@@ -377,6 +384,38 @@ export const dbService = {
     if (saveError) throw saveError;
 
     return { alreadyClaimed: false, growthBoostCount };
+  },
+
+  async markNoticeRead(userId: string, noticeId: string) {
+    const { data: gameState, error: loadError } = await supabase
+      .from('game_states')
+      .select('settings')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (loadError) throw loadError;
+
+    const settings =
+      gameState?.settings && typeof gameState.settings === 'object'
+        ? gameState.settings
+        : {};
+    const currentIds = Array.isArray(settings.readNoticeIds)
+      ? settings.readNoticeIds.filter(
+          (id: unknown): id is string => typeof id === 'string'
+        )
+      : [];
+    const readNoticeIds = currentIds.includes(noticeId)
+      ? currentIds
+      : [...currentIds, noticeId];
+
+    const { error: saveError } = await supabase
+      .from('game_states')
+      .upsert({
+        user_id: userId,
+        settings: { ...settings, readNoticeIds },
+        updated_at: new Date().toISOString(),
+      });
+    if (saveError) throw saveError;
+    return readNoticeIds;
   },
 
   async updatePlayerProfile(

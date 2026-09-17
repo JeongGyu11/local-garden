@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   GestureResponderEvent,
   Modal,
   Platform,
@@ -40,6 +41,7 @@ interface AnimalCrossingGardenProps {
   welcomeGiftClaimed: boolean;
   showCropLossCompensation: boolean;
   claimingCropLossCompensation: boolean;
+  readNoticeIds: string[];
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
@@ -53,6 +55,7 @@ interface AnimalCrossingGardenProps {
   onUseGrowthBoost: (plantId: string) => void | Promise<void>;
   onClaimWelcomeGift: () => void | Promise<void>;
   onClaimCropLossCompensation: () => void | Promise<void>;
+  onMarkNoticeRead: (noticeId: string) => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
   onChangeFarmName: (farmName: string) => Promise<void>;
@@ -134,6 +137,8 @@ const CARE_BASE_COOLDOWN_MS = 20 * 60 * 1000;
 const CARE_UPGRADE_REDUCTION_MS = 10 * 1000;
 const FARM_BGM = require('../../assets/audio/farm-bgm.mp3');
 const UI_TAP_SFX = require('../../assets/audio/ui-tap.mp3');
+const GROWTH_BOOST_NOTICE_ID = 'growth-boost-release-2026-09';
+const WELCOME_NOTICE_ID = 'welcome-guide-v1';
 
 const createPlotLabelFromSeed = (seed: Seed) => {
   const seedBase = seed.name.replace(/\s*씨앗$/, '').trim();
@@ -178,6 +183,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   welcomeGiftClaimed,
   showCropLossCompensation,
   claimingCropLossCompensation,
+  readNoticeIds,
   onWater,
   onSun,
   onHarvest,
@@ -191,6 +197,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   onUseGrowthBoost,
   onClaimWelcomeGift,
   onClaimCropLossCompensation,
+  onMarkNoticeRead,
   onChangeCharacter,
   onChangePet,
   onChangeFarmName,
@@ -218,6 +225,37 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const [dpadScale, setDpadScale] = useState(initialDpadScale);
   const [dpadSliderWidth, setDpadSliderWidth] = useState(0);
   const [menuButtonScale, setMenuButtonScale] = useState(initialMenuButtonScale);
+  const mailboxGlow = useRef(new Animated.Value(0.25)).current;
+  const hasUnreadNotice =
+    showCropLossCompensation ||
+    !welcomeGiftClaimed ||
+    !readNoticeIds.includes(GROWTH_BOOST_NOTICE_ID) ||
+    !readNoticeIds.includes(WELCOME_NOTICE_ID);
+
+  useEffect(() => {
+    if (!hasUnreadNotice) {
+      mailboxGlow.stopAnimation();
+      mailboxGlow.setValue(0);
+      return;
+    }
+
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(mailboxGlow, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(mailboxGlow, {
+          toValue: 0.25,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [hasUnreadNotice, mailboxGlow]);
   const [menuButtonSliderWidth, setMenuButtonSliderWidth] = useState(0);
   const dpadScaleRef = useRef(initialDpadScale);
   const menuButtonScaleRef = useRef(initialMenuButtonScale);
@@ -958,12 +996,20 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="공지사항 우체통 열기"
+          accessibilityLabel={
+            hasUnreadNotice ? '읽지 않은 공지가 있는 공지사항 우체통 열기' : '공지사항 우체통 열기'
+          }
           style={({ pressed }) => [styles.mailbox, pressed && styles.mailboxPressed]}
           onPress={(event) =>
             handleControlPress(event, () => setNoticeBoardVisible(true))
           }
         >
+          {hasUnreadNotice && (
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.mailboxGlow, { opacity: mailboxGlow }]}
+            />
+          )}
           <View style={styles.mailboxFlag} />
           <View style={styles.mailboxBox}>
             <Ionicons name="mail" size={16} color="#FFF7D6" />
@@ -1229,6 +1275,15 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                 <Text style={styles.noticeBody}>
                   상점에서 1000G에 구매할 수 있습니다. 작물 하나에 사용하면 바로 수확 가능한 상태가 됩니다.
                 </Text>
+                {!readNoticeIds.includes(GROWTH_BOOST_NOTICE_ID) && (
+                  <Pressable
+                    style={styles.noticeReadButton}
+                    onPress={() => handlePlainPress(() => onMarkNoticeRead(GROWTH_BOOST_NOTICE_ID))}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={15} color="#FFF7D6" />
+                    <Text style={styles.noticeReadButtonText}>읽음 확인</Text>
+                  </Pressable>
+                )}
               </View>
               <View style={styles.noticeItem}>
                 <Text style={styles.noticeDate}>게임 이용 안내</Text>
@@ -1236,6 +1291,15 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
                 <Text style={styles.noticeBody}>
                   관광지를 탐험해 씨앗을 모으고, 나만의 농장에서 지역 작물을 키워보세요.
                 </Text>
+                {!readNoticeIds.includes(WELCOME_NOTICE_ID) && (
+                  <Pressable
+                    style={styles.noticeReadButton}
+                    onPress={() => handlePlainPress(() => onMarkNoticeRead(WELCOME_NOTICE_ID))}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={15} color="#FFF7D6" />
+                    <Text style={styles.noticeReadButtonText}>읽음 확인</Text>
+                  </Pressable>
+                )}
               </View>
             </ScrollView>
           </View>
@@ -2315,6 +2379,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 22,
   },
+  mailboxGlow: {
+    position: 'absolute',
+    left: -7,
+    top: -9,
+    width: 62,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FFF176',
+    shadowColor: '#FFF176',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.95,
+    shadowRadius: 12,
+    elevation: 8,
+  },
   mailboxPressed: {
     transform: [{ scale: 0.94 }],
   },
@@ -3231,6 +3309,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     fontWeight: '600',
+  },
+  noticeReadButton: {
+    alignSelf: 'flex-end',
+    marginTop: 10,
+    minHeight: 32,
+    paddingHorizontal: 11,
+    borderRadius: 7,
+    backgroundColor: '#2D6A4F',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  noticeReadButtonText: {
+    color: '#FFF7D6',
+    fontSize: 11,
+    fontWeight: '900',
   },
   settingsModal: {
     width: '100%',

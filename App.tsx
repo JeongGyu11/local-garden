@@ -185,6 +185,7 @@ function GameApp({ session }: { session: Session }) {
   const [welcomeGiftClaimed, setWelcomeGiftClaimed] = useState(false);
   const [cropLossCompensationClaimed, setCropLossCompensationClaimed] = useState(false);
   const [claimingCropLossCompensation, setClaimingCropLossCompensation] = useState(false);
+  const [readNoticeIds, setReadNoticeIds] = useState<string[]>([]);
   const [farmName, setFarmName] = useState('나의 농장');
   const [petSurveyVisible, setPetSurveyVisible] = useState(false);
   const [editingPet, setEditingPet] = useState(false);
@@ -315,6 +316,7 @@ function GameApp({ session }: { session: Session }) {
           setGrowthBoostCount(result.data.growthBoostCount);
           setWelcomeGiftClaimed(result.data.welcomeGiftClaimed);
           setCropLossCompensationClaimed(result.data.cropLossCompensationClaimed);
+          setReadNoticeIds(result.data.readNoticeIds);
           setFarmName(result.data.farmName);
           setPetSurveyVisible(!needsCharacter && !result.data.petId);
           setEditingPet(false);
@@ -791,6 +793,17 @@ function GameApp({ session }: { session: Session }) {
     }
   };
 
+  const handleMarkNoticeRead = async (noticeId: string) => {
+    if (readNoticeIds.includes(noticeId)) return;
+    try {
+      const nextReadNoticeIds = await dbService.markNoticeRead(userId, noticeId);
+      setReadNoticeIds(nextReadNoticeIds);
+    } catch (error) {
+      console.warn('Notice read save failed:', error);
+      Alert.alert('저장 실패', '공지 읽음 상태를 저장하지 못했습니다. 다시 시도해주세요.');
+    }
+  };
+
   const handleSellHarvestedCrop = (crop: HarvestedCrop) => {
     const nextCrops = harvestedCrops.filter((item) => item.id !== crop.id);
     const nextMoney = money + HARVEST_SELL_PRICE;
@@ -940,6 +953,7 @@ function GameApp({ session }: { session: Session }) {
                 isCropLossCompensationEligible && !cropLossCompensationClaimed
               }
               claimingCropLossCompensation={claimingCropLossCompensation}
+              readNoticeIds={readNoticeIds}
               onWater={handleWater}
               onSun={handleSun}
               onHarvest={handleHarvest}
@@ -953,6 +967,7 @@ function GameApp({ session }: { session: Session }) {
               onUseGrowthBoost={handleUseGrowthBoost}
               onClaimWelcomeGift={handleClaimWelcomeGift}
               onClaimCropLossCompensation={handleClaimCropLossCompensation}
+              onMarkNoticeRead={handleMarkNoticeRead}
               onChangeCharacter={() => {
                 setEditingCharacter(true);
                 setCharacterSurveyVisible(true);
