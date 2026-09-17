@@ -58,6 +58,7 @@ const GROWTH_BOOST_PRICE = 1000;
 const DEFAULT_EXPLORE_RADIUS_METERS = 5000;
 const CARE_PROGRESS_STEP = 50;
 const WEB_PHONE_MAX_WIDTH = 430;
+const CROP_LOSS_COMPENSATION_CUTOFF = '2026-09-17T00:32:22.905Z';
 const LEGACY_DEFAULT_PLANT_IDS = new Set(['p1', 'p2']);
 const LEGACY_DEFAULT_SEED_IDS = new Set(['s1']);
 
@@ -154,6 +155,9 @@ const createSpecialtyPoint = (plant: Plant) =>
 
 function GameApp({ session }: { session: Session }) {
   const userId = session.user.id;
+  const isCropLossCompensationEligible =
+    new Date(session.user.created_at).getTime() <=
+    new Date(CROP_LOSS_COMPENSATION_CUTOFF).getTime();
   const [activeTab, setActiveTab] = useState<TabType>('garden');
   const [loading, setLoading] = useState<boolean>(true);
   const [gpsLoading, setGpsLoading] = useState<boolean>(false);
@@ -179,6 +183,8 @@ function GameApp({ session }: { session: Session }) {
   const [sunCooldownReductionMs, setSunCooldownReductionMs] = useState(0);
   const [growthBoostCount, setGrowthBoostCount] = useState(0);
   const [welcomeGiftClaimed, setWelcomeGiftClaimed] = useState(false);
+  const [cropLossCompensationClaimed, setCropLossCompensationClaimed] = useState(false);
+  const [claimingCropLossCompensation, setClaimingCropLossCompensation] = useState(false);
   const [farmName, setFarmName] = useState('나의 농장');
   const [petSurveyVisible, setPetSurveyVisible] = useState(false);
   const [editingPet, setEditingPet] = useState(false);
@@ -308,6 +314,7 @@ function GameApp({ session }: { session: Session }) {
           setSunCooldownReductionMs(result.data.sunCooldownReductionMs);
           setGrowthBoostCount(result.data.growthBoostCount);
           setWelcomeGiftClaimed(result.data.welcomeGiftClaimed);
+          setCropLossCompensationClaimed(result.data.cropLossCompensationClaimed);
           setFarmName(result.data.farmName);
           setPetSurveyVisible(!needsCharacter && !result.data.petId);
           setEditingPet(false);
@@ -761,6 +768,29 @@ function GameApp({ session }: { session: Session }) {
     Alert.alert('선물 수령 완료', '무럭무럭 자라라 5개를 창고에 넣었습니다.');
   };
 
+  const handleClaimCropLossCompensation = async () => {
+    if (!isCropLossCompensationEligible || cropLossCompensationClaimed) return;
+    if (claimingCropLossCompensation) return;
+
+    setClaimingCropLossCompensation(true);
+    try {
+      const result = await dbService.claimCropLossCompensation(userId);
+      setGrowthBoostCount(result.growthBoostCount);
+      setCropLossCompensationClaimed(true);
+      Alert.alert(
+        result.alreadyClaimed ? '수령 완료' : '패치 보상 수령 완료',
+        result.alreadyClaimed
+          ? '이미 받은 보상입니다.'
+          : '무럭무럭 자라라 5개를 창고에 넣었습니다.'
+      );
+    } catch (error) {
+      console.warn('Crop loss compensation claim failed:', error);
+      Alert.alert('수령 실패', '보상을 저장하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.');
+    } finally {
+      setClaimingCropLossCompensation(false);
+    }
+  };
+
   const handleSellHarvestedCrop = (crop: HarvestedCrop) => {
     const nextCrops = harvestedCrops.filter((item) => item.id !== crop.id);
     const nextMoney = money + HARVEST_SELL_PRICE;
@@ -906,6 +936,10 @@ function GameApp({ session }: { session: Session }) {
               sunCooldownReductionMs={sunCooldownReductionMs}
               growthBoostCount={growthBoostCount}
               welcomeGiftClaimed={welcomeGiftClaimed}
+              showCropLossCompensation={
+                isCropLossCompensationEligible && !cropLossCompensationClaimed
+              }
+              claimingCropLossCompensation={claimingCropLossCompensation}
               onWater={handleWater}
               onSun={handleSun}
               onHarvest={handleHarvest}
@@ -918,6 +952,7 @@ function GameApp({ session }: { session: Session }) {
               onBuyGrowthBoost={handleBuyGrowthBoost}
               onUseGrowthBoost={handleUseGrowthBoost}
               onClaimWelcomeGift={handleClaimWelcomeGift}
+              onClaimCropLossCompensation={handleClaimCropLossCompensation}
               onChangeCharacter={() => {
                 setEditingCharacter(true);
                 setCharacterSurveyVisible(true);

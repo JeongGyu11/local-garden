@@ -27,6 +27,8 @@ interface GardenTabProps {
   sunCooldownReductionMs: number;
   growthBoostCount: number;
   welcomeGiftClaimed: boolean;
+  showCropLossCompensation: boolean;
+  claimingCropLossCompensation: boolean;
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
@@ -39,6 +41,7 @@ interface GardenTabProps {
   onBuyGrowthBoost: () => void | Promise<void>;
   onUseGrowthBoost: (plantId: string) => void | Promise<void>;
   onClaimWelcomeGift: () => void | Promise<void>;
+  onClaimCropLossCompensation: () => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
   onChangeFarmName: (farmName: string) => Promise<void>;
@@ -70,6 +73,8 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   sunCooldownReductionMs,
   growthBoostCount,
   welcomeGiftClaimed,
+  showCropLossCompensation,
+  claimingCropLossCompensation,
   onWater,
   onSun,
   onHarvest,
@@ -82,6 +87,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   onBuyGrowthBoost,
   onUseGrowthBoost,
   onClaimWelcomeGift,
+  onClaimCropLossCompensation,
   onChangeCharacter,
   onChangePet,
   onChangeFarmName,
@@ -152,6 +158,8 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           sunCooldownReductionMs={sunCooldownReductionMs}
           growthBoostCount={growthBoostCount}
           welcomeGiftClaimed={welcomeGiftClaimed}
+          showCropLossCompensation={showCropLossCompensation}
+          claimingCropLossCompensation={claimingCropLossCompensation}
           onWater={onWater}
           onSun={onSun}
           onHarvest={onHarvest}
@@ -164,6 +172,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           onBuyGrowthBoost={onBuyGrowthBoost}
           onUseGrowthBoost={onUseGrowthBoost}
           onClaimWelcomeGift={onClaimWelcomeGift}
+          onClaimCropLossCompensation={onClaimCropLossCompensation}
           onChangeCharacter={onChangeCharacter}
           onChangePet={onChangePet}
           onChangeFarmName={onChangeFarmName}

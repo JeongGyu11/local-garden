@@ -99,6 +99,8 @@ export const dbService = {
           ? Math.max(0, Math.floor(savedSettings.growthBoostCount))
           : 0;
       const welcomeGiftClaimed = savedSettings.welcomeGiftClaimed === true;
+      const cropLossCompensationClaimed =
+        savedSettings.cropLossCompensationClaimed === true;
       const farmName =
         typeof savedSettings.farmName === 'string' && savedSettings.farmName.trim()
           ? savedSettings.farmName.trim()
@@ -253,6 +255,7 @@ export const dbService = {
           sunCooldownReductionMs,
           growthBoostCount,
           welcomeGiftClaimed,
+          cropLossCompensationClaimed,
           farmName,
           hasCustomFarmName,
         },
@@ -281,6 +284,7 @@ export const dbService = {
           sunCooldownReductionMs: 0,
           growthBoostCount: 0,
           welcomeGiftClaimed: false,
+          cropLossCompensationClaimed: false,
           farmName: '나의 농장',
           hasCustomFarmName: false,
         },
@@ -311,14 +315,68 @@ export const dbService = {
       welcomeGiftClaimed: boolean;
     }
   ) {
+    const { data: currentState, error: loadError } = await supabase
+      .from('game_states')
+      .select('settings')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (loadError) throw loadError;
+
+    const currentSettings =
+      currentState?.settings && typeof currentState.settings === 'object'
+        ? currentState.settings
+        : {};
     const { error } = await supabase
       .from('game_states')
       .upsert({
         user_id: userId,
-        settings,
+        settings: { ...currentSettings, ...settings },
         updated_at: new Date().toISOString(),
       });
     if (error) throw error;
+  },
+
+  async claimCropLossCompensation(userId: string) {
+    const { data: gameState, error: loadError } = await supabase
+      .from('game_states')
+      .select('settings')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (loadError) throw loadError;
+
+    const settings =
+      gameState?.settings && typeof gameState.settings === 'object'
+        ? gameState.settings
+        : {};
+    if (settings.cropLossCompensationClaimed === true) {
+      return {
+        alreadyClaimed: true,
+        growthBoostCount:
+          typeof settings.growthBoostCount === 'number'
+            ? Math.max(0, Math.floor(settings.growthBoostCount))
+            : 0,
+      };
+    }
+
+    const currentCount =
+      typeof settings.growthBoostCount === 'number'
+        ? Math.max(0, Math.floor(settings.growthBoostCount))
+        : 0;
+    const growthBoostCount = currentCount + 5;
+    const { error: saveError } = await supabase
+      .from('game_states')
+      .upsert({
+        user_id: userId,
+        settings: {
+          ...settings,
+          growthBoostCount,
+          cropLossCompensationClaimed: true,
+        },
+        updated_at: new Date().toISOString(),
+      });
+    if (saveError) throw saveError;
+
+    return { alreadyClaimed: false, growthBoostCount };
   },
 
   async updatePlayerProfile(

@@ -38,6 +38,8 @@ interface AnimalCrossingGardenProps {
   sunCooldownReductionMs: number;
   growthBoostCount: number;
   welcomeGiftClaimed: boolean;
+  showCropLossCompensation: boolean;
+  claimingCropLossCompensation: boolean;
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
   onHarvest: (plant: Plant) => void;
@@ -50,6 +52,7 @@ interface AnimalCrossingGardenProps {
   onBuyGrowthBoost: () => void | Promise<void>;
   onUseGrowthBoost: (plantId: string) => void | Promise<void>;
   onClaimWelcomeGift: () => void | Promise<void>;
+  onClaimCropLossCompensation: () => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
   onChangeFarmName: (farmName: string) => Promise<void>;
@@ -173,6 +176,8 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   sunCooldownReductionMs,
   growthBoostCount,
   welcomeGiftClaimed,
+  showCropLossCompensation,
+  claimingCropLossCompensation,
   onWater,
   onSun,
   onHarvest,
@@ -185,6 +190,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   onBuyGrowthBoost,
   onUseGrowthBoost,
   onClaimWelcomeGift,
+  onClaimCropLossCompensation,
   onChangeCharacter,
   onChangePet,
   onChangeFarmName,
@@ -1171,6 +1177,32 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
               </Pressable>
             </View>
             <ScrollView style={styles.noticeBoardContent} showsVerticalScrollIndicator={false}>
+              {showCropLossCompensation && (
+                <View style={styles.giftInboxCard}>
+                  <View style={styles.giftInboxIcon}>
+                    <Ionicons name="gift" size={27} color="#FFF7D6" />
+                  </View>
+                  <View style={styles.giftInboxCopy}>
+                    <Text style={styles.giftInboxEyebrow}>버그 패치 완료 보상</Text>
+                    <Text style={styles.giftInboxTitle}>무럭무럭 자라라 × 5</Text>
+                    <Text style={styles.giftInboxDescription}>
+                      심어둔 작물이 사라질 수 있던 저장 버그를 수정했습니다. 불편을 드린 기존 이용자분께 보상을 드립니다.
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.giftClaimButton,
+                      claimingCropLossCompensation && styles.giftClaimButtonDisabled,
+                    ]}
+                    disabled={claimingCropLossCompensation}
+                    onPress={() => handlePlainPress(onClaimCropLossCompensation)}
+                  >
+                    <Text style={styles.giftClaimButtonText}>
+                      {claimingCropLossCompensation ? '지급 중' : '확인·받기'}
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
               {!welcomeGiftClaimed && (
                 <View style={styles.giftInboxCard}>
                   <View style={styles.giftInboxIcon}>
@@ -3170,6 +3202,9 @@ const styles = StyleSheet.create({
     color: '#FFF7D6',
     fontSize: 11,
     fontWeight: '900',
+  },
+  giftClaimButtonDisabled: {
+    opacity: 0.6,
   },
   noticeItem: {
     marginBottom: 14,
