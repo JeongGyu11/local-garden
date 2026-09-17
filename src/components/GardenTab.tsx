@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -61,6 +61,25 @@ interface GardenTabProps {
 }
 
 const STAGE_NAMES = ['🌱 씨앗', '🌿 새싹', '🌸 꽃봉오리', '🍊 열매 맺음', '✨ 수확 가능!'];
+const CARE_COOLDOWN_MS = 20 * 60 * 1000;
+
+const getCareRemainingMs = (
+  lastUsedAt: string | undefined,
+  cooldownReductionMs: number,
+  nowMs: number
+) => {
+  if (!lastUsedAt) return 0;
+  const lastUsedMs = new Date(lastUsedAt).getTime();
+  if (Number.isNaN(lastUsedMs)) return 0;
+  return Math.max(0, CARE_COOLDOWN_MS - cooldownReductionMs - (nowMs - lastUsedMs));
+};
+
+const formatCareRemaining = (milliseconds: number) => {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}분 ${String(seconds).padStart(2, '0')}초`;
+};
 
 export const GardenTab: React.FC<GardenTabProps> = ({
   plants,
@@ -106,6 +125,12 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   onDeleteAccount,
 }) => {
   const [viewMode, setViewMode] = useState<'game' | 'list'>('game');
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const modeSwitch = (
       <View style={styles.viewModeRow}>
@@ -250,6 +275,16 @@ export const GardenTab: React.FC<GardenTabProps> = ({
             plants.map((plant) => {
               const isHarvestReady = plant.growthStage >= 4;
               const stageName = STAGE_NAMES[plant.growthStage] || '✨ 수확 가능';
+              const waterRemainingMs = getCareRemainingMs(
+                plant.lastWateredAt,
+                waterCooldownReductionMs,
+                nowMs
+              );
+              const sunRemainingMs = getCareRemainingMs(
+                plant.lastSunnedAt,
+                sunCooldownReductionMs,
+                nowMs
+              );
 
               return (
                 <View key={plant.id} style={styles.plantCard}>
@@ -335,7 +370,11 @@ export const GardenTab: React.FC<GardenTabProps> = ({
                           onPress={() => onWater(plant.id)}
                         >
                           <Ionicons name="water" size={16} color="#2563EB" />
-                          <Text style={styles.waterBtnText}>물주기 (+50%)</Text>
+                          <Text style={styles.waterBtnText}>
+                            {waterRemainingMs > 0
+                              ? `물 ${formatCareRemaining(waterRemainingMs)}`
+                              : '물주기 (+50%)'}
+                          </Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -343,7 +382,11 @@ export const GardenTab: React.FC<GardenTabProps> = ({
                           onPress={() => onSun(plant.id)}
                         >
                           <Ionicons name="sunny" size={16} color="#D97706" />
-                          <Text style={styles.sunBtnText}>햇빛쬐기 (+50%)</Text>
+                          <Text style={styles.sunBtnText}>
+                            {sunRemainingMs > 0
+                              ? `햇빛 ${formatCareRemaining(sunRemainingMs)}`
+                              : '햇빛쬐기 (+50%)'}
+                          </Text>
                         </TouchableOpacity>
                       </>
                     )}

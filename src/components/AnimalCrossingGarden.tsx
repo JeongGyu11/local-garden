@@ -155,6 +155,24 @@ const formatCooldownTime = (milliseconds: number) => {
   return `${minutes}분 ${String(seconds).padStart(2, '0')}초`;
 };
 
+const formatCompactCooldownTime = (milliseconds: number) => {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
+
+const getCareRemainingMs = (
+  lastUsedAt: string | undefined,
+  cooldownMs: number,
+  nowMs: number
+) => {
+  if (!lastUsedAt) return 0;
+  const lastUsedMs = new Date(lastUsedAt).getTime();
+  if (Number.isNaN(lastUsedMs)) return 0;
+  return Math.max(0, cooldownMs - (nowMs - lastUsedMs));
+};
+
 const getPlantPlotIndex = (plant: Plant, fallbackIndex: number) => {
   if (typeof plant.plotIndex === 'number') {
     return plant.plotIndex;
@@ -231,6 +249,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const [dpadScale, setDpadScale] = useState(initialDpadScale);
   const [dpadSliderWidth, setDpadSliderWidth] = useState(0);
   const [menuButtonScale, setMenuButtonScale] = useState(initialMenuButtonScale);
+  const [nowMs, setNowMs] = useState(Date.now());
   const mailboxGlow = useRef(new Animated.Value(0.25)).current;
   const hasUnreadNotice =
     showSeolBeomjunSeedCompensation ||
@@ -238,6 +257,11 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
     !welcomeGiftClaimed ||
     !readNoticeIds.includes(GROWTH_BOOST_NOTICE_ID) ||
     !readNoticeIds.includes(WELCOME_NOTICE_ID);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!hasUnreadNotice) {
@@ -625,31 +649,64 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
         );
       }
 
+      const waterRemainingMs = getCareRemainingMs(
+        currentPlantInPlot.lastWateredAt,
+        waterCooldownMs,
+        nowMs
+      );
+      const sunRemainingMs = getCareRemainingMs(
+        currentPlantInPlot.lastSunnedAt,
+        sunCooldownMs,
+        nowMs
+      );
+
       return (
         <>
           <Pressable
             style={[styles.squareActionButton, styles.waterButton]}
             onPress={(event) =>
               handleControlPress(event, () => {
-                onWater(currentPlantInPlot.id);
+                if (waterRemainingMs > 0) {
+                  triggerEffect(
+                    `물 ${formatCooldownTime(waterRemainingMs)}`,
+                    charPos.x,
+                    charPos.y - 7
+                  );
+                  void onWater(currentPlantInPlot.id);
+                  return;
+                }
+                void onWater(currentPlantInPlot.id);
                 triggerEffect('수분 +50%', charPos.x, charPos.y - 7);
               })
             }
           >
             <Ionicons name="water" size={18} color="#EAF7FF" />
-            <Text style={styles.actionButtonText}>물</Text>
+            <Text style={styles.actionButtonText}>
+              {waterRemainingMs > 0 ? formatCompactCooldownTime(waterRemainingMs) : '물'}
+            </Text>
           </Pressable>
           <Pressable
             style={[styles.squareActionButton, styles.sunButton]}
             onPress={(event) =>
               handleControlPress(event, () => {
-                onSun(currentPlantInPlot.id);
+                if (sunRemainingMs > 0) {
+                  triggerEffect(
+                    `햇빛 ${formatCooldownTime(sunRemainingMs)}`,
+                    charPos.x,
+                    charPos.y - 7
+                  );
+                  void onSun(currentPlantInPlot.id);
+                  return;
+                }
+                void onSun(currentPlantInPlot.id);
                 triggerEffect('햇빛 +50%', charPos.x, charPos.y - 7);
               })
             }
           >
             <Ionicons name="sunny" size={18} color="#FFF7D6" />
-            <Text style={styles.actionButtonText}>햇빛</Text>
+            <Text style={styles.actionButtonText}>
+              {sunRemainingMs > 0 ? formatCompactCooldownTime(sunRemainingMs) : '햇빛'}
+            </Text>
           </Pressable>
           {growthBoostCount > 0 && (
             <Pressable
