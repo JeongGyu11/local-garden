@@ -276,7 +276,9 @@ function GameApp({ session }: { session: Session }) {
             cleanedPlants.length !== result.data.plants.length ||
             cleanedPlants.some((plant, index) => plant.id !== rawPlants[index]?.id);
           if (shouldSyncCleanedPlants) {
-            dbService.syncPlants(userId, cleanedPlants);
+            void dbService.syncPlants(userId, cleanedPlants).catch((error) => {
+              console.warn('Plant cleanup sync failed:', error);
+            });
           }
           const cleanedSeeds = result.data.seeds.filter(
             (seed) => !LEGACY_DEFAULT_SEED_IDS.has(seed.id)
@@ -322,69 +324,72 @@ function GameApp({ session }: { session: Session }) {
   }, [userId]);
 
   // 1. 물주기 핸들러
-  const handleWater = (plantId: string) => {
-    setPlants((prev) => {
-      const targetPlant = prev.find((p) => p.id === plantId);
-      const remainingMs = getRemainingCooldownMs(
-        targetPlant?.lastWateredAt,
-        getEffectiveCareCooldownMs(waterCooldownReductionMs)
-      );
-      if (remainingMs > 0) {
-        Alert.alert('아직 물을 줄 수 없어요', `${formatCooldown(remainingMs)} 뒤에 다시 물을 줄 수 있어요.`);
-        return prev;
-      }
-      const caredAt = new Date().toISOString();
-      const nextPlants = prev.map((p) => {
-        if (p.id === plantId) {
-          const nextWater = Math.min(100, p.waterProgress + CARE_PROGRESS_STEP);
-          const nextStage = getGrowthStageFromCare(nextWater, p.sunProgress);
-          return {
-            ...p,
-            waterProgress: nextWater,
-            growthStage: nextStage,
-            lastWateredAt: caredAt,
-          };
-        }
-        return p;
-      });
-      dbService.syncPlants(userId, nextPlants);
-      return nextPlants;
-    });
+  const handleWater = async (plantId: string) => {
+    const targetPlant = plants.find((plant) => plant.id === plantId);
+    if (!targetPlant) return;
+    const remainingMs = getRemainingCooldownMs(
+      targetPlant.lastWateredAt,
+      getEffectiveCareCooldownMs(waterCooldownReductionMs)
+    );
+    if (remainingMs > 0) {
+      Alert.alert('아직 물을 줄 수 없어요', `${formatCooldown(remainingMs)} 뒤에 다시 물을 줄 수 있어요.`);
+      return;
+    }
+
+    const nextWater = Math.min(100, targetPlant.waterProgress + CARE_PROGRESS_STEP);
+    const nextPlant = {
+      ...targetPlant,
+      waterProgress: nextWater,
+      growthStage: getGrowthStageFromCare(nextWater, targetPlant.sunProgress),
+      lastWateredAt: new Date().toISOString(),
+    };
+    try {
+      await dbService.savePlant(userId, nextPlant);
+      setPlants((prev) => prev.map((plant) => (plant.id === plantId ? nextPlant : plant)));
+    } catch (error) {
+      console.warn('Plant watering save failed:', error);
+      Alert.alert('저장 실패', '물주기를 저장하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.');
+    }
   };
 
   // 2. 햇빛 쬐기 핸들러
-  const handleSun = (plantId: string) => {
-    setPlants((prev) => {
-      const targetPlant = prev.find((p) => p.id === plantId);
-      const remainingMs = getRemainingCooldownMs(
-        targetPlant?.lastSunnedAt,
-        getEffectiveCareCooldownMs(sunCooldownReductionMs)
-      );
-      if (remainingMs > 0) {
-        Alert.alert('아직 햇빛을 줄 수 없어요', `${formatCooldown(remainingMs)} 뒤에 다시 햇빛을 줄 수 있어요.`);
-        return prev;
-      }
-      const caredAt = new Date().toISOString();
-      const nextPlants = prev.map((p) => {
-        if (p.id === plantId) {
-          const nextSun = Math.min(100, p.sunProgress + CARE_PROGRESS_STEP);
-          const nextStage = getGrowthStageFromCare(p.waterProgress, nextSun);
-          return {
-            ...p,
-            sunProgress: nextSun,
-            growthStage: nextStage,
-            lastSunnedAt: caredAt,
-          };
-        }
-        return p;
-      });
-      dbService.syncPlants(userId, nextPlants);
-      return nextPlants;
-    });
+  const handleSun = async (plantId: string) => {
+    const targetPlant = plants.find((plant) => plant.id === plantId);
+    if (!targetPlant) return;
+    const remainingMs = getRemainingCooldownMs(
+      targetPlant.lastSunnedAt,
+      getEffectiveCareCooldownMs(sunCooldownReductionMs)
+    );
+    if (remainingMs > 0) {
+      Alert.alert('아직 햇빛을 줄 수 없어요', `${formatCooldown(remainingMs)} 뒤에 다시 햇빛을 줄 수 있어요.`);
+      return;
+    }
+
+    const nextSun = Math.min(100, targetPlant.sunProgress + CARE_PROGRESS_STEP);
+    const nextPlant = {
+      ...targetPlant,
+      sunProgress: nextSun,
+      growthStage: getGrowthStageFromCare(targetPlant.waterProgress, nextSun),
+      lastSunnedAt: new Date().toISOString(),
+    };
+    try {
+      await dbService.savePlant(userId, nextPlant);
+      setPlants((prev) => prev.map((plant) => (plant.id === plantId ? nextPlant : plant)));
+    } catch (error) {
+      console.warn('Plant sunlight save failed:', error);
+      Alert.alert('저장 실패', '햇빛 주기를 저장하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.');
+    }
   };
 
   // 3. 수확 핸들러 (수확 -> 도감 기록 및 경험치 상승)
-  const handleHarvest = (plant: Plant) => {
+  const handleHarvest = async (plant: Plant) => {
+    try {
+      await dbService.deletePlant(userId, plant.id);
+    } catch (error) {
+      console.warn('Plant harvest delete failed:', error);
+      Alert.alert('저장 실패', '수확 상태를 저장하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.');
+      return;
+    }
     const harvestCropName = createHarvestCropName(plant);
     const harvestedCrop: HarvestedCrop = {
       id: `harvest_${plant.id}_${Date.now()}`,
@@ -401,7 +406,6 @@ function GameApp({ session }: { session: Session }) {
     // 밭에서 제거 후 클라우드 동기화
     const nextPlants = plants.filter((p) => p.id !== plant.id);
     setPlants(nextPlants);
-    dbService.syncPlants(userId, nextPlants);
 
     // 수확한 작물 자체를 기준으로 도감 기록 생성 및 갱신
     const encyclopediaId = createEncyclopediaId(harvestCropName, plant.region);
@@ -429,7 +433,7 @@ function GameApp({ session }: { session: Session }) {
   };
 
   // 4. 씨앗 심기 핸들러
-  const handlePlantSeed = (seed: Seed, plotIndex?: number) => {
+  const handlePlantSeed = async (seed: Seed, plotIndex?: number) => {
     const occupiedPlotIndexes = new Set(
       plants.map((plant, index) => getPlantPlotIndex(plant, index))
     );
@@ -443,12 +447,7 @@ function GameApp({ session }: { session: Session }) {
       return;
     }
 
-    // 씨앗 보관함에서 제거 & 동기화
-    const nextSeeds = seeds.filter((s) => s.id !== seed.id);
-    setSeeds(nextSeeds);
-    dbService.syncSeeds(userId, nextSeeds);
-
-    // 밭에 새 작물 등록 & 동기화
+    // 작물을 DB에 먼저 저장한 뒤 씨앗을 제거해야 저장 실패로 작물이 사라지지 않는다.
     const newPlant: Plant = {
       id: `p_plot_${targetPlotIndex}_${Date.now()}`,
       name: seed.name.replace(' 씨앗', ''),
@@ -468,8 +467,24 @@ function GameApp({ session }: { session: Session }) {
       ...plants.filter((plant, index) => getPlantPlotIndex(plant, index) !== targetPlotIndex),
       newPlant,
     ];
+    const nextSeeds = seeds.filter((storedSeed) => storedSeed.id !== seed.id);
+
+    try {
+      await dbService.savePlant(userId, newPlant);
+      await dbService.deleteSeed(userId, seed.id);
+    } catch (error) {
+      console.warn('Plant seed save failed:', error);
+      try {
+        await dbService.deletePlant(userId, newPlant.id);
+      } catch (rollbackError) {
+        console.warn('Plant seed rollback failed:', rollbackError);
+      }
+      Alert.alert('파종 저장 실패', '씨앗은 사용되지 않았습니다. 인터넷 연결을 확인하고 다시 시도해주세요.');
+      return;
+    }
+
+    setSeeds(nextSeeds);
     setPlants(nextPlants);
-    dbService.syncPlants(userId, nextPlants);
 
     Alert.alert('🌱 파종 완료!', `[${seed.name}]을(를) 내 가든에 심었습니다. 물과 햇빛을 주어 키워보세요!`);
   };
@@ -708,9 +723,11 @@ function GameApp({ session }: { session: Session }) {
         : plant
     );
     const nextCount = growthBoostCount - 1;
+    const boostedPlant = nextPlants.find((plant) => plant.id === plantId);
+    if (!boostedPlant) return;
+    await dbService.savePlant(userId, boostedPlant);
     setPlants(nextPlants);
     setGrowthBoostCount(nextCount);
-    await dbService.syncPlants(userId, nextPlants);
     await dbService.updateControlSettings(userId, {
       dpadScale,
       menuButtonScale,

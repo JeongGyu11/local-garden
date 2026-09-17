@@ -18,6 +18,23 @@ import {
   INITIAL_COUPONS,
 } from '../data/mockData';
 
+const toPlantRow = (userId: string, plant: Plant) => ({
+  id: plant.id,
+  user_id: userId,
+  name: plant.name,
+  species: plant.species,
+  region: plant.region,
+  emoji: plant.emoji,
+  visual: plant.visual,
+  growth_stage: plant.growthStage,
+  water_progress: plant.waterProgress,
+  sun_progress: plant.sunProgress,
+  last_watered_at: plant.lastWateredAt,
+  last_sunned_at: plant.lastSunnedAt,
+  harvest_reward: plant.harvestReward,
+  plot_index: plant.plotIndex,
+});
+
 export const dbService = {
   async deleteAccount() {
     const { error } = await supabase.rpc('delete_own_account');
@@ -100,10 +117,12 @@ export const dbService = {
         : [];
 
       // 1-2. 작물(Plants) 조회
-      const { data: plantsData } = await supabase
+      const { data: plantsData, error: plantsError } = await supabase
         .from('plants')
         .select('*')
         .eq('user_id', userId);
+
+      if (plantsError) throw plantsError;
 
       let plants: Plant[] = [];
       if (plantsData && plantsData.length > 0) {
@@ -122,10 +141,6 @@ export const dbService = {
           harvestReward: p.harvest_reward,
           plotIndex: p.plot_index,
         }));
-      } else {
-        // DB에 없으면 초기 데이터 세팅
-        plants = INITIAL_PLANTS;
-        await this.syncPlants(userId, INITIAL_PLANTS);
       }
 
       // 1-3. 씨앗(Seeds) 조회
@@ -358,31 +373,54 @@ export const dbService = {
 
   // 작물 동기화
   async syncPlants(userId: string, plants: Plant[]) {
-    try {
-      // 기존 작물 삭제 후 재등록
-      await supabase.from('plants').delete().eq('user_id', userId);
-      if (plants.length > 0) {
-        const rows = plants.map((p) => ({
-          id: p.id,
-          user_id: userId,
-          name: p.name,
-          species: p.species,
-          region: p.region,
-          emoji: p.emoji,
-          visual: p.visual,
-          growth_stage: p.growthStage,
-          water_progress: p.waterProgress,
-          sun_progress: p.sunProgress,
-          last_watered_at: p.lastWateredAt,
-          last_sunned_at: p.lastSunnedAt,
-          harvest_reward: p.harvestReward,
-          plot_index: p.plotIndex,
-        }));
-        await supabase.from('plants').insert(rows);
-      }
-    } catch (e) {
-      console.error('syncPlants error:', e);
+    if (plants.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('plants')
+        .upsert(plants.map((plant) => toPlantRow(userId, plant)));
+      if (upsertError) throw upsertError;
     }
+
+    const { data: savedPlants, error: selectError } = await supabase
+      .from('plants')
+      .select('id')
+      .eq('user_id', userId);
+    if (selectError) throw selectError;
+
+    const currentIds = new Set(plants.map((plant) => plant.id));
+    const removedIds = (savedPlants ?? [])
+      .map((plant) => plant.id)
+      .filter((id) => !currentIds.has(id));
+    if (removedIds.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('plants')
+        .delete()
+        .eq('user_id', userId)
+        .in('id', removedIds);
+      if (deleteError) throw deleteError;
+    }
+  },
+
+  async savePlant(userId: string, plant: Plant) {
+    const { error } = await supabase.from('plants').upsert(toPlantRow(userId, plant));
+    if (error) throw error;
+  },
+
+  async deletePlant(userId: string, plantId: string) {
+    const { error } = await supabase
+      .from('plants')
+      .delete()
+      .eq('user_id', userId)
+      .eq('id', plantId);
+    if (error) throw error;
+  },
+
+  async deleteSeed(userId: string, seedId: string) {
+    const { error } = await supabase
+      .from('seeds')
+      .delete()
+      .eq('user_id', userId)
+      .eq('id', seedId);
+    if (error) throw error;
   },
 
   // 씨앗 동기화
