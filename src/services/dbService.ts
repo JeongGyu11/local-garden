@@ -48,6 +48,31 @@ const toSeedRow = (userId: string, seed: Seed) => ({
 });
 
 export const dbService = {
+  async claimDungeonFirstClearReward() {
+    const { data, error } = await supabase.rpc('claim_dungeon_first_clear_reward');
+    if (error) throw error;
+
+    const result = data as {
+      claimed?: boolean;
+      alreadyClaimed?: boolean;
+      money?: number;
+      harvestedCrops?: HarvestedCrop[];
+      rewardSeeds?: Seed[];
+    } | null;
+
+    if (!result || typeof result.money !== 'number' || !Array.isArray(result.harvestedCrops)) {
+      throw new Error('Invalid dungeon reward response');
+    }
+
+    return {
+      claimed: result.claimed === true,
+      alreadyClaimed: result.alreadyClaimed === true,
+      money: result.money,
+      harvestedCrops: result.harvestedCrops,
+      rewardSeeds: Array.isArray(result.rewardSeeds) ? result.rewardSeeds : [],
+    };
+  },
+
   async deleteAccount() {
     const { error } = await supabase.rpc('delete_own_account');
     if (error) throw error;
@@ -115,6 +140,8 @@ export const dbService = {
         savedSettings.cropLossCompensationClaimed === true;
       const seolBeomjunSeedCompensationClaimed =
         savedSettings.seolBeomjunSeedCompensationClaimed === true;
+      const hasUnlockedElevator = savedSettings.hasUnlockedElevator === true;
+      const hasClaimedDungeonReward = savedSettings.hasClaimedDungeonReward === true;
       const readNoticeIds = Array.isArray(savedSettings.readNoticeIds)
         ? savedSettings.readNoticeIds.filter(
             (id: unknown): id is string => typeof id === 'string'
@@ -278,6 +305,8 @@ export const dbService = {
           readNoticeIds,
           farmName,
           hasCustomFarmName,
+          hasUnlockedElevator,
+          hasClaimedDungeonReward,
         },
       };
     } catch (error) {
@@ -309,6 +338,8 @@ export const dbService = {
           readNoticeIds: [],
           farmName: '나의 농장',
           hasCustomFarmName: false,
+          hasUnlockedElevator: false,
+          hasClaimedDungeonReward: false,
         },
       };
     }
@@ -335,6 +366,8 @@ export const dbService = {
       sunCooldownReductionMs: number;
       growthBoostCount: number;
       welcomeGiftClaimed: boolean;
+      hasUnlockedElevator?: boolean;
+      hasClaimedDungeonReward?: boolean;
     }
   ) {
     const { data: currentState, error: loadError } = await supabase

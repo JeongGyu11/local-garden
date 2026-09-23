@@ -258,6 +258,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                   <Text style={styles.rewardSeedName}>
                     {spot.seedName} × {getDiscoveryRewardCount(spot)}
                   </Text>
+                  <Text style={styles.rewardBonusName}>⚡ 무럭무럭 자라라 × 1</Text>
                 </View>
               </View>
               <View style={styles.actionRow}>
@@ -742,6 +743,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '900',
     color: '#3A2A18',
+  },
+  rewardBonusName: {
+    marginTop: 3,
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#B45309',
   },
   checkInBtn: {
     flexDirection: 'row',

@@ -190,6 +190,85 @@ export const PetCharacter: React.FC<PetCharacterProps> = ({ petId, size = 48 }) 
   );
 };
 
+export interface PetFaceProps {
+  petId: PetId;
+  size?: number;
+}
+
+/**
+ * 펫 얼굴만 렌더링하는 전용 아이콘 컴포넌트 (지하 미로 타일 셀용)
+ */
+export const PetFace: React.FC<PetFaceProps> = ({ petId, size = 22 }) => {
+  const unit = size / 28;
+
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}>
+      <View style={{ transform: [{ scale: unit }], width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
+        {petId === 'meerkat' && (
+          <View style={[styles.meerkatHead, { position: 'relative', top: 0 }]}>
+            <View style={[styles.meerkatEar, styles.meerkatEarLeft]} />
+            <View style={[styles.meerkatEar, styles.meerkatEarRight]} />
+            <View style={styles.meerkatEyePatchLeft} />
+            <View style={styles.meerkatEyePatchRight} />
+            <View style={styles.meerkatEyeLeft}>
+              <View style={styles.meerkatPupilDot} />
+            </View>
+            <View style={styles.meerkatEyeRight}>
+              <View style={styles.meerkatPupilDot} />
+            </View>
+            <View style={styles.meerkatWedgeSnout}>
+              <View style={styles.meerkatTriNose} />
+              <View style={styles.meerkatMouthLine} />
+            </View>
+            <View style={styles.cheekLeft} />
+            <View style={styles.cheekRight} />
+          </View>
+        )}
+
+        {petId === 'capybara' && (
+          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+            <View style={[styles.tangerine, { position: 'relative', top: 0, marginBottom: -4 }]}>
+              <View style={styles.tangerineLeaf} />
+            </View>
+            <View style={[styles.capybaraHead, { position: 'relative', top: 0 }]}>
+              <View style={[styles.capyEar, styles.capyEarLeft]} />
+              <View style={[styles.capyEar, styles.capyEarRight]} />
+              <View style={styles.capyEyeLeft} />
+              <View style={styles.capyEyeRight} />
+              <View style={styles.capyNose} />
+              <View style={styles.capyMouth} />
+              <View style={styles.cheekLeft} />
+              <View style={styles.cheekRight} />
+            </View>
+          </View>
+        )}
+
+        {petId === 'panda' && (
+          <View style={[styles.pandaHead, { position: 'relative', top: 0 }]}>
+            <View style={[styles.pandaEar, styles.pandaEarLeft]} />
+            <View style={[styles.pandaEar, styles.pandaEarRight]} />
+            <View style={styles.pandaEyePatchLeft} />
+            <View style={styles.pandaEyePatchRight} />
+            <View style={styles.pandaEyeLeft}>
+              <View style={styles.sparkle} />
+            </View>
+            <View style={styles.pandaEyeRight}>
+              <View style={styles.sparkle} />
+            </View>
+            <View style={styles.pandaNose} />
+            <View style={styles.pandaMouth} />
+            <View style={styles.bambooLeaf}>
+              <Ionicons name="leaf" size={10} color="#4CAF50" />
+            </View>
+            <View style={styles.cheekLeft} />
+            <View style={styles.cheekRight} />
+          </View>
+        )}
+      </View>
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
   petWrapper: {
     width: 36,
