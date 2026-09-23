@@ -58,6 +58,11 @@ interface GardenTabProps {
   }) => Promise<void>;
   onLogout: () => Promise<void>;
   onDeleteAccount: () => Promise<void>;
+  onDungeonRewardClaim?: () => Promise<boolean>;
+  onSpendGold?: (amount: number) => void;
+  hasUnlockedElevator?: boolean;
+  onUnlockElevator?: () => void;
+  hasClaimedDungeonReward?: boolean;
 }
 
 const STAGE_NAMES = ['🌱 씨앗', '🌿 새싹', '🌸 꽃봉오리', '🍊 열매 맺음', '✨ 수확 가능!'];
@@ -123,6 +128,11 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   onControlSettingsChange,
   onLogout,
   onDeleteAccount,
+  onDungeonRewardClaim,
+  onSpendGold,
+  hasUnlockedElevator = false,
+  onUnlockElevator,
+  hasClaimedDungeonReward = false,
 }) => {
   const [viewMode, setViewMode] = useState<'game' | 'list'>('game');
   const [nowMs, setNowMs] = useState(Date.now());
@@ -219,6 +229,11 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           onControlSettingsChange={onControlSettingsChange}
           onLogout={onLogout}
           onDeleteAccount={onDeleteAccount}
+          onDungeonRewardClaim={onDungeonRewardClaim}
+          onSpendGold={onSpendGold}
+          hasUnlockedElevator={hasUnlockedElevator}
+          onUnlockElevator={onUnlockElevator}
+          hasClaimedDungeonReward={hasClaimedDungeonReward}
         />
       </View>
     );

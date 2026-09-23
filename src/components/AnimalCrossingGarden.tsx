@@ -22,6 +22,7 @@ import { getPetDefinition } from '../data/petData';
 import { PetCharacter } from './PetCharacter';
 import { PlayerCharacter } from './PlayerCharacter';
 import { SeedVisual } from './SeedVisual';
+import { UndergroundMazeModal } from './UndergroundMazeModal';
 
 interface AnimalCrossingGardenProps {
   plants: Plant[];
@@ -70,6 +71,11 @@ interface AnimalCrossingGardenProps {
   }) => Promise<void>;
   onLogout: () => Promise<void>;
   onDeleteAccount: () => Promise<void>;
+  onDungeonRewardClaim?: () => Promise<boolean>;
+  onSpendGold?: (amount: number) => void;
+  hasUnlockedElevator?: boolean;
+  onUnlockElevator?: () => void;
+  hasClaimedDungeonReward?: boolean;
 }
 
 interface MapPoint {
@@ -83,13 +89,14 @@ interface Plot extends MapPoint {
 }
 
 const PLOTS: Plot[] = [
-  { id: 0, x: 24, y: 48, label: '1번 밭' },
-  { id: 1, x: 76, y: 48, label: '2번 밭' },
-  { id: 2, x: 24, y: 72, label: '3번 밭' },
-  { id: 3, x: 76, y: 72, label: '4번 밭' },
+  { id: 0, x: 24, y: 53, label: '1번 밭' },
+  { id: 1, x: 76, y: 53, label: '2번 밭' },
+  { id: 2, x: 24, y: 76, label: '3번 밭' },
+  { id: 3, x: 76, y: 76, label: '4번 밭' },
 ];
 
 const SHOP = { x: 82, y: 31, emoji: '🏪', label: '상점' };
+const CAVE = { x: 14, y: 38, emoji: '🕳️', label: '지하' };
 const SHOP_SEEDS: Array<{ seed: Seed; price: number }> = [
   {
     seed: {
@@ -228,6 +235,11 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   onControlSettingsChange,
   onLogout,
   onDeleteAccount,
+  onDungeonRewardClaim,
+  onSpendGold,
+  hasUnlockedElevator = false,
+  onUnlockElevator,
+  hasClaimedDungeonReward = false,
 }) => {
   const { height } = useWindowDimensions();
   const bgmPlayer = useAudioPlayer(FARM_BGM);
@@ -246,6 +258,9 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [undergroundMazeVisible, setUndergroundMazeVisible] = useState(false);
+  const [dungeonConfirmVisible, setDungeonConfirmVisible] = useState(false);
+  const [dungeonStartFloor, setDungeonStartFloor] = useState<number>(1);
   const [dpadScale, setDpadScale] = useState(initialDpadScale);
   const [dpadSliderWidth, setDpadSliderWidth] = useState(0);
   const [menuButtonScale, setMenuButtonScale] = useState(initialMenuButtonScale);
@@ -305,9 +320,13 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
         null
       : null;
   const isNearShop = distance(SHOP, charPos) < 10;
+  const isNearCave =
+    distance(CAVE, charPos) < 13 ||
+    (charPos.x <= 30 && charPos.y >= 34 && charPos.y <= 44);
   const isNearLibrary =
-    (charPos.x <= 34 && charPos.y <= 38) ||
-    distance({ x: 20, y: 26 }, charPos) < 16;
+    !isNearCave &&
+    ((charPos.x <= 34 && charPos.y <= 33) ||
+      distance({ x: 20, y: 26 }, charPos) < 14);
   const isNearCabin =
     charPos.x > 34 && charPos.x < 64 && charPos.y <= 38;
   const isNearWarehouse =
@@ -744,6 +763,35 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
       );
     }
 
+    if (isNearCave) {
+      return (
+        <Pressable
+          style={[
+            styles.primaryActionButton,
+            styles.caveActionButton,
+            { minWidth: menuButtonWidth, height: menuActionHeight },
+          ]}
+          onPress={(event) =>
+            handleControlPress(event, () => {
+              if (money < 300) {
+                const msg = '지하 미로 던전에 입장하려면 300G가 필요합니다. 농작물을 수확해 골드를 모아보세요! 🌾';
+                if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                  window.alert(`골드가 부족해요 💸\n\n${msg}`);
+                } else {
+                  Alert.alert('골드가 부족해요 💸', msg);
+                }
+                return;
+              }
+              setDungeonConfirmVisible(true);
+            })
+          }
+        >
+          <Ionicons name="compass" size={menuButtonIconSize} color="#FFF7D6" />
+          <Text style={[styles.actionButtonText, menuButtonTextStyle]}>지하</Text>
+        </Pressable>
+      );
+    }
+
     if (isNearLibrary) {
       return (
         <Pressable
@@ -846,8 +894,15 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
     </View>
   );
 
-  const renderShopCrop = (crop: HarvestedCrop) => (
-    <View key={`shop-${crop.id}`} style={styles.shopCropItem}>
+  const getCropSellPrice = (crop: HarvestedCrop) => {
+    if (crop.id.startsWith('gem_diamond')) return 1500;
+    if (crop.id.startsWith('gem_amethyst')) return 1000;
+    if (crop.name.includes('무지개')) return 1000;
+    return 350;
+  };
+
+  const renderShopCrop = (crop: HarvestedCrop, index: number) => (
+    <View key={`shop-${crop.id}-${index}`} style={styles.shopCropItem}>
       <View style={styles.bagItemIcon}>
         {crop.visual ? (
           <SeedVisual visual={crop.visual} emoji={crop.emoji} size={44} />
@@ -865,7 +920,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
         style={styles.sellButton}
         onPress={() => handlePlainPress(() => onSellHarvestedCrop(crop))}
       >
-        <Text style={styles.sellButtonText}>350G 판매</Text>
+        <Text style={styles.sellButtonText}>{getCropSellPrice(crop)}G 판매</Text>
       </Pressable>
     </View>
   );
@@ -1000,6 +1055,41 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
             </View>
           </View>
           <View style={styles.libraryBase} />
+        </View>
+
+        {/* === 좌측 길: 지하 계단 던전 입구 (Underground Cellar Staircase Entrance) === */}
+        <View style={styles.caveContainer} pointerEvents="none">
+          {/* 석조 계단 프레임 및 난간 (Stone Cellar Structure) */}
+          <View style={styles.cellarStoneStructure}>
+            {/* 좌/우 석조 난간 기둥 (Stone Balustrades) */}
+            <View style={styles.cellarBalustradeLeft} />
+            <View style={styles.cellarBalustradeRight} />
+
+            {/* 지하로 내려가는 석조 계단 층층 레이어 (Descending Stone Steps) */}
+            <View style={styles.cellarStairWell}>
+              <View style={styles.stairStep1} />
+              <View style={styles.stairStep2} />
+              <View style={styles.stairStep3} />
+              <View style={styles.stairStep4} />
+              {/* 계단 맨 아래 심연의 어둠 (Pitch Black Underground Tunnel) */}
+              <View style={styles.stairDeepDarkness}>
+                <View style={styles.stairGlow1} />
+                <View style={styles.stairGlow2} />
+              </View>
+            </View>
+
+            {/* 지하 입구 난간 등불 램프 (Lantern Lamp on Pillar) */}
+            <View style={styles.cellarLanternPost} />
+            <View style={styles.cellarLanternBody}>
+              <View style={styles.cellarLanternGlow} />
+            </View>
+          </View>
+
+          {/* 지하 안내 표지판 (Signplate) */}
+          <View style={[styles.buildingSignPlate, styles.caveSignPlate, isNearCave && styles.buildingSignPlateActive]}>
+            <Ionicons name="compass" size={10} color="#FFE57F" />
+            <Text style={styles.buildingSignText}>지하</Text>
+          </View>
         </View>
 
         {/* === 중앙 전면: 스타듀밸리 농가 오두막 본채 (Main Farmhouse Cabin) === */}
@@ -1980,6 +2070,205 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* 지하 던전 입장 결제 확인 모달 */}
+      {/* 지하 던전 입장 결제 확인 모달 */}
+      <Modal
+        visible={dungeonConfirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDungeonConfirmVisible(false)}
+      >
+        <View style={styles.cabinModalBackdrop}>
+          <View
+            style={{
+              width: '90%',
+              maxWidth: 380,
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              padding: 24,
+              alignItems: 'center',
+              borderWidth: 2,
+              borderColor: '#E2E8F0',
+            }}
+          >
+            <Text style={{ fontSize: 32, textAlign: 'center', marginBottom: 8 }}>
+              {hasUnlockedElevator ? '🛗' : '🕳️'}
+            </Text>
+            <Text
+              style={{
+                fontSize: 19,
+                fontWeight: '900',
+                color: '#0F172A',
+                textAlign: 'center',
+                marginBottom: 6,
+              }}
+            >
+              지하 미로 던전 입장
+            </Text>
+
+            {hasUnlockedElevator && (
+              <View
+                style={{
+                  backgroundColor: '#FEF3C7',
+                  paddingHorizontal: 12,
+                  paddingVertical: 4,
+                  borderRadius: 20,
+                  marginBottom: 10,
+                  borderWidth: 1,
+                  borderColor: '#FDE68A',
+                }}
+              >
+                <Text style={{ color: '#D97706', fontSize: 12, fontWeight: '800' }}>
+                  ✨ B10F 엘리베이터 해금됨!
+                </Text>
+              </View>
+            )}
+
+            <Text
+              style={{
+                fontSize: 14,
+                color: '#475569',
+                textAlign: 'center',
+                lineHeight: 20,
+                marginBottom: 20,
+                fontWeight: '500',
+              }}
+            >
+              {hasUnlockedElevator
+                ? '입장하실 방식과 층을 선택해 주세요.'
+                : '입장료 300G가 차감됩니다.\n지하 미로 던전에 입장하시겠습니까?'}
+            </Text>
+
+            <View style={{ gap: 10, width: '100%' }}>
+              {/* B1F 걸어서 300G */}
+              <TouchableOpacity
+                style={{
+                  paddingVertical: 12,
+                  paddingHorizontal: 16,
+                  backgroundColor: money >= 300 ? '#15803D' : '#CBD5E1',
+                  borderRadius: 10,
+                  alignItems: 'center',
+                }}
+                disabled={money < 300}
+                onPress={() => {
+                  const proceed = () => {
+                    setDungeonConfirmVisible(false);
+                    setDungeonStartFloor(1);
+                    if (onSpendGold) {
+                      onSpendGold(300);
+                    }
+                    triggerEffect('🕳️ B1F 던전 진입 (-300G)', charPos.x, charPos.y - 7);
+                    setUndergroundMazeVisible(true);
+                  };
+
+                  if (hasClaimedDungeonReward) {
+                    const alertMsg = '이미 보상을 받아서 최하층에 도달하여도 보상이 없습니다. 입장하시겠습니까?';
+                    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                      if (window.confirm(alertMsg)) {
+                        proceed();
+                      }
+                      return;
+                    }
+                    Alert.alert('지하 던전 재입장', alertMsg, [
+                      { text: '취소', style: 'cancel' },
+                      { text: '입장하기', onPress: proceed },
+                    ]);
+                  } else {
+                    proceed();
+                  }
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 14 }}>
+                  🪜 B1F부터 탐험 시작 (300G)
+                </Text>
+              </TouchableOpacity>
+
+              {/* B10F 엘리베이터 500G (해금된 경우) */}
+              {hasUnlockedElevator && (
+                <TouchableOpacity
+                  style={{
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    backgroundColor: money >= 500 ? '#7C3AED' : '#CBD5E1',
+                    borderRadius: 10,
+                    alignItems: 'center',
+                  }}
+                  disabled={money < 500}
+                  onPress={() => {
+                    const proceed = () => {
+                      setDungeonConfirmVisible(false);
+                      setDungeonStartFloor(10);
+                      if (onSpendGold) {
+                        onSpendGold(500);
+                      }
+                      triggerEffect('🛗 B10F 엘리베이터 진입 (-500G)', charPos.x, charPos.y - 7);
+                      setUndergroundMazeVisible(true);
+                    };
+
+                    if (hasClaimedDungeonReward) {
+                      const alertMsg = '이미 보상을 받아서 최하층에 도달하여도 보상이 없습니다. 입장하시겠습니까?';
+                      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                        if (window.confirm(alertMsg)) {
+                          proceed();
+                        }
+                        return;
+                      }
+                      Alert.alert('지하 던전 재입장', alertMsg, [
+                        { text: '취소', style: 'cancel' },
+                        { text: '입장하기', onPress: proceed },
+                      ]);
+                    } else {
+                      proceed();
+                    }
+                  }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 14 }}>
+                    🛗 B10F 직행 엘리베이터 타고 시작 (500G)
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* 취소 버튼 */}
+              <TouchableOpacity
+                style={{
+                  paddingVertical: 10,
+                  backgroundColor: '#F1F5F9',
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: '#CBD5E1',
+                }}
+                onPress={() => setDungeonConfirmVisible(false)}
+              >
+                <Text style={{ color: '#475569', fontWeight: '800', fontSize: 14 }}>취소</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <UndergroundMazeModal
+        visible={undergroundMazeVisible}
+        money={money}
+        petId={petId}
+        initialFloor={dungeonStartFloor}
+        onClose={() => setUndergroundMazeVisible(false)}
+        onSpendGold={(amount) => {
+          if (onSpendGold) {
+            onSpendGold(amount);
+          }
+        }}
+        onClaimReward={async () => {
+          if (onDungeonRewardClaim) {
+            return onDungeonRewardClaim();
+          }
+          return false;
+        }}
+        onUnlockElevator={onUnlockElevator}
+        hasUnlockedElevator={hasUnlockedElevator}
+        hasClaimedDungeonReward={hasClaimedDungeonReward}
+      />
     </View>
   );
 };
@@ -2173,6 +2462,161 @@ const styles = StyleSheet.create({
     color: '#FFF7D6',
     fontSize: 10,
     fontWeight: '900',
+  },
+
+  caveActionButton: {
+    backgroundColor: '#3F2E21',
+    borderColor: '#7C5C43',
+  },
+
+  /* === 좌측 길: 지하 계단 던전 입구 (Underground Cellar Staircase Entrance) === */
+  caveContainer: {
+    position: 'absolute',
+    left: '3.5%',
+    top: '30.5%',
+    width: 98,
+    height: 92,
+    zIndex: 10,
+    alignItems: 'center',
+  },
+  cellarStoneStructure: {
+    width: 92,
+    height: 80,
+    backgroundColor: '#374151',
+    borderRadius: 12,
+    borderWidth: 3,
+    borderColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 4,
+    position: 'relative',
+    transform: [{ rotate: '90deg' }],
+  },
+  cellarBalustradeLeft: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 12,
+    bottom: 0,
+    backgroundColor: '#4B5563',
+    borderRightWidth: 2,
+    borderColor: '#1E293B',
+    zIndex: 4,
+  },
+  cellarBalustradeRight: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 12,
+    bottom: 0,
+    backgroundColor: '#4B5563',
+    borderLeftWidth: 2,
+    borderColor: '#1E293B',
+    zIndex: 4,
+  },
+  cellarStairWell: {
+    width: 62,
+    height: 68,
+    backgroundColor: '#111827',
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#030712',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  stairStep1: {
+    width: '100%',
+    height: 11,
+    backgroundColor: '#64748B',
+    borderBottomWidth: 2,
+    borderColor: '#334155',
+  },
+  stairStep2: {
+    width: '90%',
+    height: 11,
+    backgroundColor: '#475569',
+    borderBottomWidth: 2,
+    borderColor: '#1E293B',
+  },
+  stairStep3: {
+    width: '80%',
+    height: 11,
+    backgroundColor: '#334155',
+    borderBottomWidth: 2,
+    borderColor: '#0F172A',
+  },
+  stairStep4: {
+    width: '70%',
+    height: 11,
+    backgroundColor: '#1E293B',
+    borderBottomWidth: 2,
+    borderColor: '#020617',
+  },
+  stairDeepDarkness: {
+    flex: 1,
+    width: '60%',
+    backgroundColor: '#020617',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stairGlow1: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#FACC15',
+    opacity: 0.8,
+  },
+  stairGlow2: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#38BDF8',
+    marginTop: 2,
+    opacity: 0.7,
+  },
+  cellarLanternPost: {
+    position: 'absolute',
+    top: 4,
+    right: 14,
+    width: 3,
+    height: 10,
+    backgroundColor: '#1F2937',
+    zIndex: 6,
+  },
+  cellarLanternBody: {
+    position: 'absolute',
+    top: 12,
+    right: 10,
+    width: 10,
+    height: 11,
+    backgroundColor: '#B45309',
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: '#78350F',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 6,
+  },
+  cellarLanternGlow: {
+    width: 5,
+    height: 6,
+    backgroundColor: '#FDE047',
+    borderRadius: 1.5,
+    shadowColor: '#FACC15',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.95,
+    shadowRadius: 5,
+  },
+  caveSignPlate: {
+    position: 'absolute',
+    top: -14,
+    alignSelf: 'center',
+    zIndex: 15,
   },
 
   /* === 좌측: 마을 도서관 (Village Library / Codex) === */

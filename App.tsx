@@ -191,6 +191,8 @@ function GameApp({ session }: { session: Session }) {
   const [claimingSeolBeomjunSeedCompensation, setClaimingSeolBeomjunSeedCompensation] =
     useState(false);
   const [readNoticeIds, setReadNoticeIds] = useState<string[]>([]);
+  const [hasUnlockedElevator, setHasUnlockedElevator] = useState<boolean>(false);
+  const [hasClaimedDungeonReward, setHasClaimedDungeonReward] = useState<boolean>(false);
   const [farmName, setFarmName] = useState('나의 농장');
   const [petSurveyVisible, setPetSurveyVisible] = useState(false);
   const [editingPet, setEditingPet] = useState(false);
@@ -327,6 +329,8 @@ function GameApp({ session }: { session: Session }) {
             result.data.seolBeomjunSeedCompensationClaimed
           );
           setReadNoticeIds(result.data.readNoticeIds);
+          setHasUnlockedElevator(result.data.hasUnlockedElevator ?? false);
+          setHasClaimedDungeonReward(result.data.hasClaimedDungeonReward ?? false);
           setFarmName(result.data.farmName);
           setPetSurveyVisible(!needsCharacter && !result.data.petId);
           setEditingPet(false);
@@ -451,11 +455,12 @@ function GameApp({ session }: { session: Session }) {
     Alert.alert('수확 완료', `${harvestCropName}을(를) 수확했습니다.`);
   };
 
+  const occupiedPlotIndexes = new Set(
+    plants.map((plant, index) => getPlantPlotIndex(plant, index))
+  );
+
   // 4. 씨앗 심기 핸들러
   const handlePlantSeed = async (seed: Seed, plotIndex?: number) => {
-    const occupiedPlotIndexes = new Set(
-      plants.map((plant, index) => getPlantPlotIndex(plant, index))
-    );
     const targetPlotIndex =
       typeof plotIndex === 'number' && plotIndex >= 0 && plotIndex < 4
         ? plotIndex
@@ -581,12 +586,25 @@ function GameApp({ session }: { session: Session }) {
       description: `${spot.title} 방문 인증으로 획득한 귀한 특산 씨앗`,
     }));
     const nextSeeds = [...newSeeds, ...seeds];
+    const nextGrowthBoostCount = growthBoostCount + 1;
 
     try {
       await dbService.checkInSpot(userId, spot.id, spot.title, spot.region);
       await dbService.saveSeeds(userId, newSeeds);
+      await dbService.updateControlSettings(userId, {
+        dpadScale,
+        menuButtonScale,
+        farmName,
+        waterCooldownReductionMs,
+        sunCooldownReductionMs,
+        growthBoostCount: nextGrowthBoostCount,
+        welcomeGiftClaimed,
+      });
     } catch (error) {
       console.warn('Check-in reward save failed:', error);
+      await Promise.allSettled(
+        newSeeds.map((rewardSeed) => dbService.deleteSeed(userId, rewardSeed.id))
+      );
       setCheckInNotice({
         title: '보상 저장 실패',
         message: '방문 보상을 저장하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.',
@@ -604,6 +622,7 @@ function GameApp({ session }: { session: Session }) {
       [spot.id]: Date.now() + CHECK_IN_COOLDOWN_MS,
     }));
     setSeeds(nextSeeds);
+    setGrowthBoostCount(nextGrowthBoostCount);
 
     // 도감 잠금 해제 & 동기화
     const nextEnc = encyclopedia.map((item) =>
@@ -853,16 +872,28 @@ function GameApp({ session }: { session: Session }) {
     }
   };
 
+  const getCropSellPrice = (crop: HarvestedCrop) => {
+    if (crop.id.startsWith('gem_diamond')) return 1500;
+    if (crop.id.startsWith('gem_amethyst')) return 1000;
+    if (crop.name.includes('무지개')) return 1000;
+    return HARVEST_SELL_PRICE;
+  };
+
   const handleSellHarvestedCrop = (crop: HarvestedCrop) => {
-    const nextCrops = harvestedCrops.filter((item) => item.id !== crop.id);
-    const nextMoney = money + HARVEST_SELL_PRICE;
+    const sellPrice = getCropSellPrice(crop);
+    const indexToSell = harvestedCrops.findIndex((item) => item.id === crop.id);
+    if (indexToSell === -1) return;
+
+    const nextCrops = [...harvestedCrops];
+    nextCrops.splice(indexToSell, 1);
+    const nextMoney = money + sellPrice;
     setHarvestedCrops(nextCrops);
     setMoney(nextMoney);
     dbService.updateGameState(userId, {
       money: nextMoney,
       harvestedCrops: nextCrops,
     });
-    Alert.alert('판매 완료', `${crop.name}을(를) 판매해 ${HARVEST_SELL_PRICE}G를 벌었습니다.`);
+    Alert.alert('판매 완료', `${crop.name}을(를) 판매해 ${sellPrice}G를 벌었습니다.`);
   };
 
   const handleBuySeed = async (seed: Seed, price: number) => {
@@ -928,6 +959,52 @@ function GameApp({ session }: { session: Session }) {
     setPetId(nextPetId);
     setPetSurveyVisible(false);
     setEditingPet(false);
+  };
+
+  const handleDungeonRewardClaim = async () => {
+    try {
+      const result = await dbService.claimDungeonFirstClearReward();
+      setMoney(result.money);
+      setHarvestedCrops(result.harvestedCrops);
+      if (result.rewardSeeds.length > 0) {
+        setSeeds((currentSeeds) => [...result.rewardSeeds, ...currentSeeds]);
+      }
+      setHasClaimedDungeonReward(true);
+      return true;
+    } catch (err) {
+      console.warn('Dungeon reward claim save failed:', err);
+      return false;
+    }
+  };
+
+  const handleSpendGold = async (amount: number) => {
+    const nextMoney = Math.max(0, money - amount);
+    setMoney(nextMoney);
+    try {
+      await dbService.updateGameState(userId, { money: nextMoney });
+    } catch (err) {
+      console.warn('Spend gold save failed:', err);
+    }
+  };
+
+  const handleUnlockElevator = async () => {
+    if (hasUnlockedElevator) return;
+    setHasUnlockedElevator(true);
+    try {
+      await dbService.updateControlSettings(userId, {
+        dpadScale,
+        menuButtonScale,
+        farmName,
+        waterCooldownReductionMs,
+        sunCooldownReductionMs,
+        growthBoostCount,
+        welcomeGiftClaimed,
+        hasUnlockedElevator: true,
+        hasClaimedDungeonReward,
+      });
+    } catch (err) {
+      console.warn('Unlock elevator save failed:', err);
+    }
   };
 
   const handleLogout = async () => {
@@ -1052,6 +1129,11 @@ function GameApp({ session }: { session: Session }) {
               }
               onLogout={handleLogout}
               onDeleteAccount={handleDeleteAccount}
+              onDungeonRewardClaim={handleDungeonRewardClaim}
+              onSpendGold={handleSpendGold}
+              hasUnlockedElevator={hasUnlockedElevator}
+              onUnlockElevator={handleUnlockElevator}
+              hasClaimedDungeonReward={hasClaimedDungeonReward}
             />
           )}
 

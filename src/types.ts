@@ -113,3 +113,23 @@ export interface EncyclopediaItem {
   firstHarvestedAt?: string;
   lastHarvestedAt?: string;
 }
+
+export interface DungeonGear {
+  speedBoots: boolean;
+  goldenPickaxeCharges: number;
+  wideTorch: boolean;
+  shieldArmorCharges: number;
+  hourglassSeconds: number;
+}
+
+export interface DungeonProgress {
+  maxFloorReached: number;
+  unlockedWarpPasses: number[];
+}
+
+export interface DungeonReward {
+  gold: number;
+  seeds: Seed[];
+  growthBoosts: number;
+  gems: HarvestedCrop[];
+}

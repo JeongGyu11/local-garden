@@ -63,7 +63,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
           <View style={styles.boosterTip}>
             <Ionicons name="flash" size={16} color="#E76F51" />
             <Text style={styles.boosterTipText}>
-              방문 보너스로 <Text style={styles.bold}>작물 성장 2배 부스터</Text>가 적용됩니다!
+              방문 보너스로 <Text style={styles.bold}>무럭무럭 자라라 × 1</Text>도 보관함에 지급됐습니다!
             </Text>
           </View>
 
