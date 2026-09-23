@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,6 +44,7 @@ export const UndergroundMazeModal: React.FC<UndergroundMazeModalProps> = ({
   hasClaimedDungeonReward = false,
   hasUnlockedElevator = false,
 }) => {
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const petDef = getPetDefinition(petId ?? 'meerkat');
   const [currentFloor, setCurrentFloor] = useState(initialFloor);
   const [timeLeft, setTimeLeft] = useState(30);
@@ -51,6 +53,15 @@ export const UndergroundMazeModal: React.FC<UndergroundMazeModalProps> = ({
   const [gridSize, setGridSize] = useState(7);
   const [gameResult, setGameResult] = useState<'CLEAR' | 'FAIL_TIME' | 'FAIL_BAT' | 'VICTORY_ALL' | null>(null);
   const rewardClaimInProgressRef = useRef(false);
+  const modalWidth = Math.min(screenWidth * 0.96, 720);
+  const availableMazeWidth = Math.max(210, modalWidth - 32);
+  const availableMazeHeight = Math.max(200, screenHeight * 0.96 - 338);
+  const mazeOuterSize = Math.min(availableMazeWidth, availableMazeHeight);
+  const cellSize = Math.max(
+    11,
+    Math.min(30, Math.floor((mazeOuterSize - 12) / gridSize) - 2)
+  );
+  const cellContentSize = Math.max(11, Math.min(22, cellSize - 4));
 
   // 미로 생성 함수 (층별 격자 생성)
   const generateMaze = (floor: number) => {
@@ -290,10 +301,11 @@ export const UndergroundMazeModal: React.FC<UndergroundMazeModalProps> = ({
             </View>
 
             {/* 미로 격자 맵 (Grid Map) */}
-            <View style={styles.mazeBoard}>
-              {mazeGrid.map((row, r) => (
-                <View key={`row-${r}`} style={styles.mazeRow}>
-                  {row.map((cell, c) => {
+            <View style={styles.mazeViewport}>
+              <View style={styles.mazeBoard}>
+                {mazeGrid.map((row, r) => (
+                  <View key={`row-${r}`} style={styles.mazeRow}>
+                    {row.map((cell, c) => {
                     const isPlayer = playerPos.x === c && playerPos.y === r;
                     const dx = Math.abs(c - playerPos.x);
                     const dy = Math.abs(r - playerPos.y);
@@ -310,31 +322,40 @@ export const UndergroundMazeModal: React.FC<UndergroundMazeModalProps> = ({
                       isDark = !((dx === 0 && dy <= 1) || (dy === 0 && dx <= 1));
                     }
 
-                    return (
-                      <View
-                        key={`cell-${r}-${c}`}
-                        style={[
-                          styles.cell,
-                          cell.type === 'WALL' && styles.cellWall,
-                          isDark && styles.cellDark,
-                        ]}
-                      >
-                        {isPlayer ? (
-                          <View style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
-                            <PetFace petId={petId ?? 'meerkat'} size={20} />
-                          </View>
-                        ) : isDark ? null : cell.type === 'LADDER' ? (
-                          <Text style={styles.cellEmoji}>🪜</Text>
-                        ) : cell.type === 'BAT' ? (
-                          <Text style={styles.cellEmoji}>🦇</Text>
-                        ) : cell.type === 'TRAP' ? (
-                          <Text style={styles.cellEmoji}>💥</Text>
-                        ) : null}
-                      </View>
-                    );
-                  })}
-                </View>
-              ))}
+                      return (
+                        <View
+                          key={`cell-${r}-${c}`}
+                          style={[
+                            styles.cell,
+                            { width: cellSize, height: cellSize },
+                            cell.type === 'WALL' && styles.cellWall,
+                            isDark && styles.cellDark,
+                          ]}
+                        >
+                          {isPlayer ? (
+                            <View
+                              style={{
+                                width: cellContentSize,
+                                height: cellContentSize,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <PetFace petId={petId ?? 'meerkat'} size={cellContentSize} />
+                            </View>
+                          ) : isDark ? null : cell.type === 'LADDER' ? (
+                            <Text style={[styles.cellEmoji, { fontSize: cellContentSize * 0.72 }]}>🪜</Text>
+                          ) : cell.type === 'BAT' ? (
+                            <Text style={[styles.cellEmoji, { fontSize: cellContentSize * 0.72 }]}>🦇</Text>
+                          ) : cell.type === 'TRAP' ? (
+                            <Text style={[styles.cellEmoji, { fontSize: cellContentSize * 0.72 }]}>💥</Text>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
             </View>
 
             {/* D-Pad 방향키 조작반 */}
@@ -415,12 +436,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.75)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 14,
+    padding: 6,
   },
   modalCard: {
-    width: '100%',
-    maxWidth: 440,
-    maxHeight: '92%',
+    width: '96%',
+    height: '96%',
+    maxWidth: 720,
     backgroundColor: '#1E293B',
     borderRadius: 14,
     borderWidth: 3,
@@ -461,7 +482,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   gameContainer: {
-    padding: 12,
+    flex: 1,
+    minHeight: 0,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
     alignItems: 'center',
   },
   gameHud: {
@@ -485,12 +510,17 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#334155',
   },
+  mazeViewport: {
+    flex: 1,
+    minHeight: 0,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   mazeRow: {
     flexDirection: 'row',
   },
   cell: {
-    width: 24,
-    height: 24,
     backgroundColor: '#334155',
     margin: 1,
     borderRadius: 3,
@@ -507,17 +537,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   dpadArea: {
-    marginTop: 12,
+    flexShrink: 0,
+    marginTop: 10,
     alignItems: 'center',
+    gap: 5,
   },
   dpadRow: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 5,
   },
   dpadBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 6,
+    width: 52,
+    height: 52,
+    borderRadius: 10,
     backgroundColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
@@ -525,9 +557,9 @@ const styles = StyleSheet.create({
     borderColor: '#64748B',
   },
   dpadCenter: {
-    width: 44,
-    height: 44,
-    borderRadius: 6,
+    width: 52,
+    height: 52,
+    borderRadius: 10,
     backgroundColor: '#0F172A',
     alignItems: 'center',
     justifyContent: 'center',
