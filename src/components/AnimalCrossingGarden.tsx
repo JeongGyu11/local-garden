@@ -44,6 +44,8 @@ interface AnimalCrossingGardenProps {
   claimingCropLossCompensation: boolean;
   showSeolBeomjunSeedCompensation: boolean;
   claimingSeolBeomjunSeedCompensation: boolean;
+  showDungeonLaunchGift: boolean;
+  claimingDungeonLaunchGift: boolean;
   readNoticeIds: string[];
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
@@ -59,6 +61,7 @@ interface AnimalCrossingGardenProps {
   onClaimWelcomeGift: () => void | Promise<void>;
   onClaimCropLossCompensation: () => void | Promise<void>;
   onClaimSeolBeomjunSeedCompensation: () => void | Promise<void>;
+  onClaimDungeonLaunchGift: () => void | Promise<void>;
   onMarkNoticeRead: (noticeId: string) => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
@@ -213,6 +216,8 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   claimingCropLossCompensation,
   showSeolBeomjunSeedCompensation,
   claimingSeolBeomjunSeedCompensation,
+  showDungeonLaunchGift,
+  claimingDungeonLaunchGift,
   readNoticeIds,
   onWater,
   onSun,
@@ -228,6 +233,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   onClaimWelcomeGift,
   onClaimCropLossCompensation,
   onClaimSeolBeomjunSeedCompensation,
+  onClaimDungeonLaunchGift,
   onMarkNoticeRead,
   onChangeCharacter,
   onChangePet,
@@ -267,6 +273,7 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
   const [nowMs, setNowMs] = useState(Date.now());
   const mailboxGlow = useRef(new Animated.Value(0.25)).current;
   const hasUnreadNotice =
+    showDungeonLaunchGift ||
     showSeolBeomjunSeedCompensation ||
     showCropLossCompensation ||
     !welcomeGiftClaimed ||
@@ -1377,6 +1384,32 @@ export const AnimalCrossingGarden: React.FC<AnimalCrossingGardenProps> = ({
               </Pressable>
             </View>
             <ScrollView style={styles.noticeBoardContent} showsVerticalScrollIndicator={false}>
+              {showDungeonLaunchGift && (
+                <View style={styles.giftInboxCard}>
+                  <View style={styles.giftInboxIcon}>
+                    <Ionicons name="gift" size={27} color="#FFF7D6" />
+                  </View>
+                  <View style={styles.giftInboxCopy}>
+                    <Text style={styles.giftInboxEyebrow}>신규 지하 출시!</Text>
+                    <Text style={styles.giftInboxTitle}>출시 기념 1,000G</Text>
+                    <Text style={styles.giftInboxDescription}>
+                      지하 미로 던전 출시를 기념해 모든 정원사님께 드리는 계정당 1회 선물입니다.
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.giftClaimButton,
+                      claimingDungeonLaunchGift && styles.giftClaimButtonDisabled,
+                    ]}
+                    disabled={claimingDungeonLaunchGift}
+                    onPress={() => handlePlainPress(onClaimDungeonLaunchGift)}
+                  >
+                    <Text style={styles.giftClaimButtonText}>
+                      {claimingDungeonLaunchGift ? '지급 중' : '확인·받기'}
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
               {showSeolBeomjunSeedCompensation && (
                 <View style={styles.giftInboxCard}>
                   <View style={styles.giftInboxIcon}>

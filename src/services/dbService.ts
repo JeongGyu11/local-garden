@@ -48,6 +48,27 @@ const toSeedRow = (userId: string, seed: Seed) => ({
 });
 
 export const dbService = {
+  async claimDungeonLaunchNoticeReward() {
+    const { data, error } = await supabase.rpc('claim_dungeon_launch_notice_reward');
+    if (error) throw error;
+
+    const result = data as {
+      claimed?: boolean;
+      alreadyClaimed?: boolean;
+      money?: number;
+    } | null;
+
+    if (!result || typeof result.money !== 'number') {
+      throw new Error('Invalid dungeon launch reward response');
+    }
+
+    return {
+      claimed: result.claimed === true,
+      alreadyClaimed: result.alreadyClaimed === true,
+      money: result.money,
+    };
+  },
+
   async claimDungeonFirstClearReward() {
     const { data, error } = await supabase.rpc('claim_dungeon_first_clear_reward');
     if (error) throw error;
@@ -142,6 +163,7 @@ export const dbService = {
         savedSettings.seolBeomjunSeedCompensationClaimed === true;
       const hasUnlockedElevator = savedSettings.hasUnlockedElevator === true;
       const hasClaimedDungeonReward = savedSettings.hasClaimedDungeonReward === true;
+      const dungeonLaunchGiftClaimed = savedSettings.dungeonLaunchGiftClaimed === true;
       const readNoticeIds = Array.isArray(savedSettings.readNoticeIds)
         ? savedSettings.readNoticeIds.filter(
             (id: unknown): id is string => typeof id === 'string'
@@ -307,6 +329,7 @@ export const dbService = {
           hasCustomFarmName,
           hasUnlockedElevator,
           hasClaimedDungeonReward,
+          dungeonLaunchGiftClaimed,
         },
       };
     } catch (error) {
@@ -340,6 +363,7 @@ export const dbService = {
           hasCustomFarmName: false,
           hasUnlockedElevator: false,
           hasClaimedDungeonReward: false,
+          dungeonLaunchGiftClaimed: false,
         },
       };
     }

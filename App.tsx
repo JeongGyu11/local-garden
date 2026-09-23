@@ -193,6 +193,8 @@ function GameApp({ session }: { session: Session }) {
   const [readNoticeIds, setReadNoticeIds] = useState<string[]>([]);
   const [hasUnlockedElevator, setHasUnlockedElevator] = useState<boolean>(false);
   const [hasClaimedDungeonReward, setHasClaimedDungeonReward] = useState<boolean>(false);
+  const [dungeonLaunchGiftClaimed, setDungeonLaunchGiftClaimed] = useState(false);
+  const [claimingDungeonLaunchGift, setClaimingDungeonLaunchGift] = useState(false);
   const [farmName, setFarmName] = useState('나의 농장');
   const [petSurveyVisible, setPetSurveyVisible] = useState(false);
   const [editingPet, setEditingPet] = useState(false);
@@ -331,6 +333,7 @@ function GameApp({ session }: { session: Session }) {
           setReadNoticeIds(result.data.readNoticeIds);
           setHasUnlockedElevator(result.data.hasUnlockedElevator ?? false);
           setHasClaimedDungeonReward(result.data.hasClaimedDungeonReward ?? false);
+          setDungeonLaunchGiftClaimed(result.data.dungeonLaunchGiftClaimed ?? false);
           setFarmName(result.data.farmName);
           setPetSurveyVisible(!needsCharacter && !result.data.petId);
           setEditingPet(false);
@@ -977,6 +980,28 @@ function GameApp({ session }: { session: Session }) {
     }
   };
 
+  const handleClaimDungeonLaunchGift = async () => {
+    if (dungeonLaunchGiftClaimed || claimingDungeonLaunchGift) return;
+
+    setClaimingDungeonLaunchGift(true);
+    try {
+      const result = await dbService.claimDungeonLaunchNoticeReward();
+      setMoney(result.money);
+      setDungeonLaunchGiftClaimed(true);
+      Alert.alert(
+        result.alreadyClaimed ? '이미 받은 선물입니다' : '출시 기념 선물 지급 완료',
+        result.alreadyClaimed
+          ? '이 계정은 이미 지하 출시 기념 선물을 받았습니다.'
+          : '1,000G가 안전하게 지급되었습니다.'
+      );
+    } catch (error) {
+      console.warn('Dungeon launch gift claim failed:', error);
+      Alert.alert('지급 실패', '선물을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setClaimingDungeonLaunchGift(false);
+    }
+  };
+
   const handleSpendGold = async (amount: number) => {
     const nextMoney = Math.max(0, money - amount);
     setMoney(nextMoney);
@@ -1094,6 +1119,8 @@ function GameApp({ session }: { session: Session }) {
                 userId === SEOL_BEOMJUN_USER_ID && !seolBeomjunSeedCompensationClaimed
               }
               claimingSeolBeomjunSeedCompensation={claimingSeolBeomjunSeedCompensation}
+              showDungeonLaunchGift={!dungeonLaunchGiftClaimed}
+              claimingDungeonLaunchGift={claimingDungeonLaunchGift}
               readNoticeIds={readNoticeIds}
               onWater={handleWater}
               onSun={handleSun}
@@ -1109,6 +1136,7 @@ function GameApp({ session }: { session: Session }) {
               onClaimWelcomeGift={handleClaimWelcomeGift}
               onClaimCropLossCompensation={handleClaimCropLossCompensation}
               onClaimSeolBeomjunSeedCompensation={handleClaimSeolBeomjunSeedCompensation}
+              onClaimDungeonLaunchGift={handleClaimDungeonLaunchGift}
               onMarkNoticeRead={handleMarkNoticeRead}
               onChangeCharacter={() => {
                 setEditingCharacter(true);

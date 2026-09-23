@@ -31,6 +31,8 @@ interface GardenTabProps {
   claimingCropLossCompensation: boolean;
   showSeolBeomjunSeedCompensation: boolean;
   claimingSeolBeomjunSeedCompensation: boolean;
+  showDungeonLaunchGift: boolean;
+  claimingDungeonLaunchGift: boolean;
   readNoticeIds: string[];
   onWater: (plantId: string) => void;
   onSun: (plantId: string) => void;
@@ -46,6 +48,7 @@ interface GardenTabProps {
   onClaimWelcomeGift: () => void | Promise<void>;
   onClaimCropLossCompensation: () => void | Promise<void>;
   onClaimSeolBeomjunSeedCompensation: () => void | Promise<void>;
+  onClaimDungeonLaunchGift: () => void | Promise<void>;
   onMarkNoticeRead: (noticeId: string) => void | Promise<void>;
   onChangeCharacter: () => void;
   onChangePet: () => void;
@@ -106,6 +109,8 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   claimingCropLossCompensation,
   showSeolBeomjunSeedCompensation,
   claimingSeolBeomjunSeedCompensation,
+  showDungeonLaunchGift,
+  claimingDungeonLaunchGift,
   readNoticeIds,
   onWater,
   onSun,
@@ -121,6 +126,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
   onClaimWelcomeGift,
   onClaimCropLossCompensation,
   onClaimSeolBeomjunSeedCompensation,
+  onClaimDungeonLaunchGift,
   onMarkNoticeRead,
   onChangeCharacter,
   onChangePet,
@@ -207,6 +213,8 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           claimingCropLossCompensation={claimingCropLossCompensation}
           showSeolBeomjunSeedCompensation={showSeolBeomjunSeedCompensation}
           claimingSeolBeomjunSeedCompensation={claimingSeolBeomjunSeedCompensation}
+          showDungeonLaunchGift={showDungeonLaunchGift}
+          claimingDungeonLaunchGift={claimingDungeonLaunchGift}
           readNoticeIds={readNoticeIds}
           onWater={onWater}
           onSun={onSun}
@@ -222,6 +230,7 @@ export const GardenTab: React.FC<GardenTabProps> = ({
           onClaimWelcomeGift={onClaimWelcomeGift}
           onClaimCropLossCompensation={onClaimCropLossCompensation}
           onClaimSeolBeomjunSeedCompensation={onClaimSeolBeomjunSeedCompensation}
+          onClaimDungeonLaunchGift={onClaimDungeonLaunchGift}
           onMarkNoticeRead={onMarkNoticeRead}
           onChangeCharacter={onChangeCharacter}
           onChangePet={onChangePet}
